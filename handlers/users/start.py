@@ -216,10 +216,21 @@ async def birth_date_user(message: types.Message, state: FSMContext):
         ic(response_data, status)
         if status == 409:
             await message.answer(response_data['message'])
+            await state.finish()
         elif status == 404:
             await message.answer_photo("https://api.mentalaba.uz/logo/b3ccc6f7-aaad-42e2-a256-5cc8e8dc0d70.webp", caption="Profil rasmini yuklang\n\nHajmi 5 mb dan katta bo'lmagan, .png, .jpg, .jpeg formatdagi oq yoki ko’k fonda olingan 3x4 razmerdagi rasmingizni yuklang.")
             await FullRegistration.profile_image.set()
-        if status != 409 and status != 404:
+        
+        me_user, status_ = await me(token=token)
+        ic(me_user, status_)
+        user_educations = me_user.get("user_educations")
+        ic(226, user_educations, type(user_educations))
+        if user_educations is None:
+            await message.answer("Ta’lim ma'lumotlaringizni to'ldiring.", reply_markup=continue_button)
+            await FullRegistration.extra_phone.set()
+            return
+        if status != 409 and status != 404 and user_educations is not None:
+
             # 7. Foydalanuvchiga javob
             # await message.answer("✅ Ma'lumotlar qabul qilindi. Endi hujjatlaringizni topshiring.")
             text = (
@@ -485,7 +496,7 @@ async def edu_name_user(message: types.Message, state: FSMContext):
     # Statega yozish
     await state.update_data(diplom_file=response.get("url"))
     # await message.answer("📎 Diplom fayli yuklandi!")
-
+    ic(data.get("diplom_file"), data)
     update_user_applicaition_form, status_ = await update_application_form(
         token=token_,
         district_id=data.get("district_id"),
@@ -533,14 +544,14 @@ async def pinfl_user(message: types.Message, state: FSMContext):
     response, status_ = await user_login(phone=phone, password=password)
     ic(response, status_)
     token_ = response.get("token")
-    await state.update_data(token=token_, refreshToken=refreshToken)
+    await state.update_data(token=response.get("token"), refreshToken=refreshToken)
     
     me_user, status_ = await me(token=token_)
     ic(me_user, status_)
-    user_educations = me_user.get("educations")
+    user_educations = me_user.get("user_educations")
     ic(user_educations, type(user_educations))
     refreshToken = response.get("refreshToken")
-    ic(530, token_, refreshToken)
+    ic(530, token_,token,  refreshToken)
     await state.update_data(token=token_)
     await state.update_data(refreshToken=refreshToken)
     if user_educations is None:
@@ -552,7 +563,7 @@ async def pinfl_user(message: types.Message, state: FSMContext):
         first_name = response.get("first_name")
         refreshToken = response.get("refreshToken")
         ic(530, token_, refreshToken)
-        await state.update_data(token=token_)
+        await state.update_data(token=token)
         await state.update_data(refreshToken=refreshToken)
         if status_ == 401:
             await message.answer("❌ Parol noto'g'ri kiritilgan!")
@@ -571,19 +582,24 @@ async def pinfl_user(message: types.Message, state: FSMContext):
             share_button_ = share_button(token=token_, refresh_token=refreshToken)
             # Foydalanuvchiga yuborish
             await message.answer(text, reply_markup=share_button_, parse_mode="HTML")
-            await state.set_state(None)
+            await FullRegistration.next()
 
 
 @dp.message_handler(commands=['delete_user'], state='*')
 async def delete(message: types.Message, state: FSMContext):
+    # await state.set_state(None)
     data = await state.get_data()
     ic(data)
     token_ = data.get("token")
     phone_ = data.get("phone")
     password = data.get("password")
+    user_login_, status = await user_login(phone=phone_, password=password)
+    ic(user_login_)
+    token_user = user_login_.get("token")
+    ic(token_user)
 
     try:
-        response, status = await delete_user(token=token_, phone=phone_, password=password)
+        response, status = await delete_user(token=token_user, phone=phone_, password=password)
         ic(response, status)
 
         if status == 200:  # yoki o'zgaruvchining tuzilishiga qarab
