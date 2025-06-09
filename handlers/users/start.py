@@ -2,18 +2,20 @@ from aiogram import types
 from aiogram.dispatcher.filters.builtin import CommandStart
 from aiogram.dispatcher import FSMContext
 from loader import dp, bot
-from keyboards.default.userKeyboard import keyboard_user, strong_pass
+from keyboards.default.userKeyboard import keyboard_user, strong_pass, continue_button
 from aiogram.types import ContentType
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import re
 from states.userStates import Registration
-from utils.send_req import auth_check, user_register, user_verify, user_info, user_login, delete_user, upload_image, fetch_regions, district_locations, fetch_educations, upload_file
+from utils.send_req import auth_check, user_register, user_verify, user_info, user_login, delete_user, upload_image, fetch_regions, district_locations, fetch_educations,\
+upload_file, me, update_application_form
 from aiogram.types import ReplyKeyboardRemove
 from datetime import datetime
 from keyboards.inline.user_inline import share_button, gender_button
 from data.config import CHANNEL_ID
 from icecream import ic
 from states.userStates import Registration, FullRegistration
+
 
 @dp.message_handler(CommandStart(), state="*")
 async def bot_start(message: types.Message, state: FSMContext):
@@ -367,7 +369,7 @@ async def extra_phone_user(message: types.Message, state: FSMContext):
     token = data.get("token")
     extra_phone = message.text.strip()
     await state.update_data(extra_phone=extra_phone)
-    await message.answer("Ta’lim dargohi joylashgan viloyatni tanlang.")
+    await message.answer("Ta’lim dargohi joylashgan viloyatni tanlang.", reply_markup=ReplyKeyboardRemove())
     response, status_ = await fetch_regions(token)
     keyboard = InlineKeyboardMarkup(row_width=2)
     for region in response:
@@ -388,6 +390,7 @@ async def extra_phone_user(message: types.Message, state: FSMContext):
 @dp.callback_query_handler(lambda call: call.data.startswith("region_"), state=FullRegistration.select_edu_plase)
 async def region_user(call: types.CallbackQuery, state: FSMContext):
     region_id = call.data.split("_")[1]
+    await state.update_data(region_id=region_id)
     data_ = await state.get_data()
     ic(data_)
     ic(region_id)
@@ -413,7 +416,8 @@ async def region_user(call: types.CallbackQuery, state: FSMContext):
 
 @dp.callback_query_handler(lambda call: call.data.startswith("location_"), state=FullRegistration.district_place)
 async def location_user(call: types.CallbackQuery, state: FSMContext):
-    # location_id = call.data.split("_")[1]
+    location_id = call.data.split("_")[1]
+    await state.update_data(district_id=location_id)
     data = await state.get_data()
     token = data.get("token")
     response, status_ = await fetch_educations(token)
@@ -438,9 +442,16 @@ async def university_user(call: types.CallbackQuery, state: FSMContext):
     university_id = call.data.split("_")[1]
     await state.update_data(university_id=university_id)
 
-    await call.message.answer("📆 Tamomlagan yilingizni kiriting.\nNamuna: 2022")
-    await FullRegistration.ended_year.set()
+    # await call.message.answer("📆 Tamomlagan yilingizni kiriting.\nNamuna: 2022")
+    await call.message.answer("Ta'lim dargohi nomini kiriting:\nNamuna: Farg'ona universiteti")
+    await FullRegistration.edu_name.set()
 
+@dp.message_handler(state=FullRegistration.edu_name)
+async def university_name_user(message: types.Message, state: FSMContext):
+    university_name = message.text.strip()
+    await state.update_data(university_name=university_name)
+    await message.answer("📆 Tamomlagan yilingizni kiriting.\nNamuna: 2022")
+    await FullRegistration.ended_year.set()
 
 @dp.message_handler(state=FullRegistration.ended_year)
 async def ended_year_user(message: types.Message, state: FSMContext):
@@ -474,6 +485,16 @@ async def edu_name_user(message: types.Message, state: FSMContext):
     # Statega yozish
     await state.update_data(diplom_file=response.get("url"))
     # await message.answer("📎 Diplom fayli yuklandi!")
+
+    update_user_applicaition_form, status_ = await update_application_form(
+        token=token_,
+        district_id=data.get("district_id"),
+        region_id=data.get("region_id"),
+        institution_name=data.get("university_name"),
+        graduation_year=data.get("ended_year"),
+        file_path=data.get("diplom_file")
+    )
+    ic(update_user_applicaition_form, status_)
     await state.set_data(None)
     text = (
         "✅ <b>Siz tizimga muvaffaqiyatli kirdingiz.</b>\n\n"
@@ -492,11 +513,18 @@ async def edu_name_user(message: types.Message, state: FSMContext):
 async def pinfl_user(message: types.Message, state: FSMContext):
     get_user_password = message.text.strip()
     await state.update_data(password=get_user_password)
+    full_data = await state.get_data()
+    ic(full_data)
+    token_ = full_data.get("token")
+    ic(497, token_)
     if len(get_user_password) < 8:
         await message.answer("❌ Parol kamida 8 ta belgidan iborat bo‘lishi lozim.")
         return
     await state.update_data(password=get_user_password)
 
+
+
+    # if user_educations is not None:
     user_data = await state.get_data()
     phone = user_data.get("phone")
     password = user_data.get("password")
@@ -505,29 +533,45 @@ async def pinfl_user(message: types.Message, state: FSMContext):
     response, status_ = await user_login(phone=phone, password=password)
     ic(response, status_)
     token_ = response.get("token")
+    await state.update_data(token=token_, refreshToken=refreshToken)
     
-    first_name = response.get("first_name")
+    me_user, status_ = await me(token=token_)
+    ic(me_user, status_)
+    user_educations = me_user.get("educations")
+    ic(user_educations, type(user_educations))
     refreshToken = response.get("refreshToken")
+    ic(530, token_, refreshToken)
     await state.update_data(token=token_)
     await state.update_data(refreshToken=refreshToken)
-    if status_ == 401:
-        await message.answer("❌ Parol noto'g'ri kiritilgan!")
+    if user_educations is None:
+        await message.answer("Ta’lim ma'lumotlaringizni to'ldiring.", reply_markup=continue_button)
+        await FullRegistration.extra_phone.set()
         return
-    if first_name is None:
+
+    if user_educations is not None:
+        first_name = response.get("first_name")
+        refreshToken = response.get("refreshToken")
+        ic(530, token_, refreshToken)
         await state.update_data(token=token_)
-        await message.answer("️️Passport yoki ID karta seriya raqamini kiriting.")
-        await Registration.pinfl.set()
-        # await message.answer('kirdiz')
-    else:
-        text = (
-            "✅ <b>Siz tizimga muvaffaqiyatli kirdingiz.</b>\n\n"
-            "🎓 <b>Endi siz tanlagan universitetlarga hujjat topshirish imkoniyatiga egasiz.</b>\n\n"
-            # "📄 <i>Iltimos, davom etish uchun kerakli bo‘limni tanlang.</i>"
-        )
-        share_button_ = share_button(token=token_, refresh_token=refreshToken)
-        # Foydalanuvchiga yuborish
-        await message.answer(text, reply_markup=share_button_, parse_mode="HTML")
-        await state.set_state(None)
+        await state.update_data(refreshToken=refreshToken)
+        if status_ == 401:
+            await message.answer("❌ Parol noto'g'ri kiritilgan!")
+            return
+        if first_name is None:
+            await state.update_data(token=token_)
+            await message.answer("️️Passport yoki ID karta seriya raqamini kiriting.")
+            await Registration.pinfl.set()
+            # await message.answer('kirdiz')
+        else:
+            text = (
+                "✅ <b>Siz tizimga muvaffaqiyatli kirdingiz.</b>\n\n"
+                "🎓 <b>Endi siz tanlagan universitetlarga hujjat topshirish imkoniyatiga egasiz.</b>\n\n"
+                # "📄 <i>Iltimos, davom etish uchun kerakli bo‘limni tanlang.</i>"
+            )
+            share_button_ = share_button(token=token_, refresh_token=refreshToken)
+            # Foydalanuvchiga yuborish
+            await message.answer(text, reply_markup=share_button_, parse_mode="HTML")
+            await state.set_state(None)
 
 
 @dp.message_handler(commands=['delete_user'], state='*')
@@ -549,3 +593,5 @@ async def delete(message: types.Message, state: FSMContext):
     except Exception as e:
         ic(e)
         await message.answer("Xatolik yuz berdi. Iltimos, keyinroq urinib ko‘ring.")
+
+

@@ -14,3 +14,10 @@ strong_pass = ReplyKeyboardMarkup(
     ],
     resize_keyboard=True
 )
+
+continue_button = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton("Davom etish")]
+    ],
+    resize_keyboard=True
+)

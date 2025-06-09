@@ -187,3 +187,36 @@ async def district_locations(id, token):
         async with session.get(url, headers=headers) as response:
             status_ = response.status
             return await response.json(), status_
+        
+async def me(token):
+    url = f"{main_url}/v1/application-form/me"
+    headers = {
+        "Authorization": f"Bearer {token}"
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers) as response:
+            status_ = response.status
+            return await response.json(), status_
+        
+async def update_application_form(token, district_id, region_id, institution_name, graduation_year, file_path):
+    url = f"{main_url}/v1/application-form"
+    headers = {
+        "Authorization": f"Bearer {token}"
+    }
+    payload = {
+        "update_required_section": "having_problem_with_education",
+        "user_education": {
+            "country_id": 234,
+            "district_id": district_id,
+            "education_type": "1",
+            "file": [file_path],
+            "graduation_year": graduation_year,
+            "institution_name": institution_name,
+            "region_id": region_id,
+            "src": "manually"
+        }
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.patch(url, headers=headers) as response:
+            status_ = response.status
+            return await response.json(), status_

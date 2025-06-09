@@ -27,3 +27,4 @@ class FullRegistration(StatesGroup):
     ended_year = State()
     diplom_file = State()
     
+    
