@@ -238,11 +238,12 @@ async def birth_date_user(message: types.Message, state: FSMContext):
                 "🎓 <b>Endi siz tanlagan universitetlarga hujjat topshirish imkoniyatiga egasiz.</b>\n\n"
                 # "📄 <i>Iltimos, davom etish uchun kerakli bo‘limni tanlang.</i>"
             )
-            await state.set_state(None)
+            
 
             # Foydalanuvchiga yuborish
             share_button_ = share_button(token=token, refresh_token=refreshToken)
-            await message.answer(text, reply_markup=share_button_, parse_mode="HTML")    
+            await message.answer(text, reply_markup=share_button_, parse_mode="HTML")  
+            await state.set_state(None)  
 
     except ValueError:
         await message.answer("❌ Noto‘g‘ri sana formati. Iltimos, DD-MM-YYYY formatida kiriting (masalan: 28-08-2000).")
@@ -506,7 +507,6 @@ async def edu_name_user(message: types.Message, state: FSMContext):
         file_path=data.get("diplom_file")
     )
     ic(update_user_applicaition_form, status_)
-    await state.set_data(None)
     text = (
         "✅ <b>Siz tizimga muvaffaqiyatli kirdingiz.</b>\n\n"
         "🎓 <b>Endi siz tanlagan universitetlarga hujjat topshirish imkoniyatiga egasiz.</b>\n\n"
@@ -515,6 +515,8 @@ async def edu_name_user(message: types.Message, state: FSMContext):
     share_button_ = share_button(token=token_, refresh_token=refreshToken)
     # Foydalanuvchiga yuborish
     await message.answer(text, reply_markup=share_button_, parse_mode="HTML")
+
+    await state.set_data(None)
 
 
     

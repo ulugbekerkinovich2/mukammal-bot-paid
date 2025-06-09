@@ -199,24 +199,38 @@ async def me(token):
             return await response.json(), status_
         
 async def update_application_form(token, district_id, region_id, institution_name, graduation_year, file_path):
+    import json
     url = f"{main_url}/v1/application-form"
     headers = {
-        "Authorization": f"Bearer {token}"
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
     }
+
     payload = {
         "update_required_section": "having_problem_with_education",
         "user_education": {
             "country_id": 234,
-            "district_id": district_id,
+            "district_id": int(district_id),
             "education_type": "1",
-            "file": [file_path],
-            "graduation_year": graduation_year,
+            "file": [file_path],  # server bu joyda list kutayaptimi, aniq bilib ol
+            "graduation_year": int(graduation_year),
             "institution_name": institution_name,
-            "region_id": region_id,
+            "region_id": int(region_id),
             "src": "manually"
         }
     }
+
     async with aiohttp.ClientSession() as session:
-        async with session.patch(url, headers=headers) as response:
+        async with session.patch(url, data=json.dumps(payload), headers=headers) as response:
             status_ = response.status
-            return await response.json(), status_
+
+            content_type = response.headers.get("Content-Type", "")
+            if "application/json" in content_type:
+                json_data = await response.json()
+            else:
+                text_data = await response.text()
+                print(f"[!] Unexpected Content-Type: {content_type}")
+                print(f"[!] Response body: {text_data}")
+                json_data = {}
+
+            return json_data, status_
