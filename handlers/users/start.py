@@ -151,7 +151,7 @@ async def verify_user(message: types.Message, state: FSMContext):
         token = response.get("token")
         auth_key = response.get("auth_key")
         haveApplicationForm = response.get("haveApplicationForm")
-
+        ic(154, response, status_, token)
         await state.update_data(token=token, auth_key=auth_key, haveApplicationForm=haveApplicationForm)
         # Aytaylik, server True/False yoki JSON qaytaradi
         if status_ == 201:
