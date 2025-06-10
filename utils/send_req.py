@@ -219,7 +219,7 @@ async def update_application_form(token, district_id, region_id, institution_nam
             "src": "manually"
         }
     }
-
+    ic(payload)
     async with aiohttp.ClientSession() as session:
         async with session.patch(url, data=json.dumps(payload), headers=headers) as response:
             status_ = response.status

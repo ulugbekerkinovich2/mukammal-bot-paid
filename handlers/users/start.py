@@ -217,6 +217,7 @@ async def birth_date_user(message: types.Message, state: FSMContext):
         if status == 409:
             await message.answer(response_data['message'])
             await state.finish()
+            return
         elif status == 404:
             await message.answer_photo("https://api.mentalaba.uz/logo/b3ccc6f7-aaad-42e2-a256-5cc8e8dc0d70.webp", caption="Profil rasmini yuklang\n\nHajmi 5 mb dan katta bo'lmagan, .png, .jpg, .jpeg formatdagi oq yoki ko’k fonda olingan 3x4 razmerdagi rasmingizni yuklang.")
             await FullRegistration.profile_image.set()
@@ -489,13 +490,13 @@ async def edu_name_user(message: types.Message, state: FSMContext):
 
     # Faylni upload qilish
     response, status_ = await upload_file(token_, local_path)
-
+    ic(493, response, status_)
     # Clean up: vaqtinchalik faylni o‘chirish
     if os.path.exists(local_path):
         os.remove(local_path)
-
+    ic(response.get("path"), response['path'])
     # Statega yozish
-    await state.update_data(diplom_file=response.get("url"))
+    await state.update_data(diplom_file=response["path"])
     # await message.answer("📎 Diplom fayli yuklandi!")
     ic(data.get("diplom_file"), data)
     update_user_applicaition_form, status_ = await update_application_form(
@@ -504,7 +505,7 @@ async def edu_name_user(message: types.Message, state: FSMContext):
         region_id=data.get("region_id"),
         institution_name=data.get("university_name"),
         graduation_year=data.get("ended_year"),
-        file_path=data.get("diplom_file")
+        file_path=response['path']
     )
     ic(update_user_applicaition_form, status_)
     text = (
@@ -589,7 +590,7 @@ async def pinfl_user(message: types.Message, state: FSMContext):
 
 @dp.message_handler(commands=['delete_user'], state='*')
 async def delete(message: types.Message, state: FSMContext):
-    # await state.set_state(None)
+    await state.set_state(None)
     data = await state.get_data()
     ic(data)
     token_ = data.get("token")
