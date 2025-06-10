@@ -56,17 +56,29 @@ async def user_info(birth_date, document, token):
         "document": document,
         "ip_address": "45.150.24.19"
     }
+
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {token}",
         "Referer": "https://mentalaba.uz/",
         "Origin": "https://mentalaba.uz"
     }
-    print(headers)
+
     async with aiohttp.ClientSession() as session:
         async with session.post(url, json=payload, headers=headers) as response:
             status_ = response.status
-            return await response.json(), status_
+            content_type = response.headers.get("Content-Type", "")
+            
+            # Agar JSON bo'lsa qaytaramiz
+            if "application/json" in content_type:
+                json_data = await response.json()
+                return json_data, status_
+            else:
+                text = await response.text()
+                print(f"[Xatolik] Kutilmagan content-type: {content_type}")
+                print(f"[Javob body]: {text}")
+                return {"error": "Unexpected response format", "raw": text}, status_
+
         
 
 async def user_login(phone, password):
