@@ -558,8 +558,8 @@ async def pinfl_user(message: types.Message, state: FSMContext):
     await state.update_data(token=token_)
     await state.update_data(refreshToken=refreshToken)
     if user_educations is None:
-        await message.answer("Ta’lim ma'lumotlaringizni to'ldiring.", reply_markup=continue_button)
-        await FullRegistration.extra_phone.set()
+        await message.answer("Passport yoki ID karta seriya raqamini kiriting.", reply_markup=ReplyKeyboardRemove())
+        await Registration.pinfl.set()
         return
 
     if user_educations is not None:
