@@ -91,7 +91,9 @@ async def phone_number(message: types.Message, state: FSMContext):
         await message.answer("Raqamingiz qabul qilindi", reply_markup=ReplyKeyboardRemove())
     else:
         raw_text = message.text.strip()
-        if not re.fullmatch(r"9\d{8}", raw_text):
+        # if not re.fullmatch(r"9\d{8}", raw_text):
+        if not re.fullmatch(r"(9[0-9]|33|88|77)\d{7}", raw_text):
+
             await message.answer("❌ Noto‘g‘ri formatdagi raqam. Iltimos, faqat 9 ta raqam kiriting. Namuna: 901234567")
             return
         phone = "+998" + raw_text
