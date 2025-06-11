@@ -14,7 +14,7 @@ from datetime import datetime
 from keyboards.inline.user_inline import share_button, gender_button
 from data.config import CHANNEL_ID
 from icecream import ic
-from states.userStates import Registration, FullRegistration
+from states.userStates import Registration, FullRegistration, DeleteUser
 
 
 @dp.message_handler(CommandStart(), state="*")
@@ -227,11 +227,31 @@ async def birth_date_user(message: types.Message, state: FSMContext):
         user_educations = me_user.get("user_educations")
         ic(226, user_educations, type(user_educations))
         if user_educations is None:
-            await message.answer("Ta’lim ma'lumotlaringizni to'ldiring.", reply_markup=continue_button)
-            await FullRegistration.extra_phone.set()
-            return
-        if status != 409 and status != 404 and user_educations is not None:
+            await message.answer("Ta’lim ma'lumotlaringizni to'ldiring.") #, reply_markup=continue_button)
+            # await FullRegistration.extra_phone.set()
+            # return
+            data = await state.get_data()
+            token = data.get("token")
+            extra_phone = message.text.strip()
+            await state.update_data(extra_phone=extra_phone)
+            await message.answer("Ta’lim dargohi joylashgan viloyatni tanlang.", reply_markup=ReplyKeyboardRemove())
+            response, status_ = await fetch_regions(token)
+            keyboard = InlineKeyboardMarkup(row_width=2)
+            for region in response:
+                keyboard.insert(
+                    InlineKeyboardButton(
+                        text=region['name_uz'],
+                        callback_data=f"region_{region['id']}"
+                    )
+                )
 
+            await bot.send_message(
+                chat_id=message.chat.id,
+                text="📍 Viloyatlardan birini tanlang:",
+                reply_markup=keyboard
+            )
+            await FullRegistration.select_edu_plase.set()
+        if status != 409 and status != 404 and user_educations is not None:
             # 7. Foydalanuvchiga javob
             # await message.answer("✅ Ma'lumotlar qabul qilindi. Endi hujjatlaringizni topshiring.")
             text = (
@@ -239,8 +259,6 @@ async def birth_date_user(message: types.Message, state: FSMContext):
                 "🎓 <b>Endi siz tanlagan universitetlarga hujjat topshirish imkoniyatiga egasiz.</b>\n\n"
                 # "📄 <i>Iltimos, davom etish uchun kerakli bo‘limni tanlang.</i>"
             )
-            
-
             # Foydalanuvchiga yuborish
             share_button_ = share_button(token=token, refresh_token=refreshToken)
             await message.answer(text, reply_markup=share_button_, parse_mode="HTML")  
@@ -588,29 +606,101 @@ async def pinfl_user(message: types.Message, state: FSMContext):
             await FullRegistration.next()
 
 
+# @dp.message_handler(commands=['delete_user'], state='*')
+# async def delete(message: types.Message, state: FSMContext):
+#     await state.set_state(None)
+#     data = await state.get_data()
+#     ic(data)
+#     token_ = data.get("token")
+#     phone_ = data.get("phone")
+#     password = data.get("password")
+#     user_login_, status = await user_login(phone=phone_, password=password)
+#     ic(user_login_)
+#     token_user = user_login_.get("token")
+#     ic(token_user)
+
+#     try:
+#         response, status = await delete_user(token=token_user, phone=phone_, password=password)
+#         ic(response, status)
+
+#         if status == 200:  # yoki o'zgaruvchining tuzilishiga qarab
+#             await message.answer("Siz ro'yxatdan muvaffaqiyatli o'chirildingiz.")
+#         else:
+#             await message.answer("O'chirishda muammo yuz berdi.")
+#     except Exception as e:
+#         ic(e)
+#         await message.answer("Xatolik yuz berdi. Iltimos, keyinroq urinib ko‘ring.")
+
+
+# @dp.message_handler(commands=['delete_user'], state='*')
+# async def confirm_delete_user(message: types.Message, state: FSMContext):
+#     answer = message.text.strip().lower()
+    
+#     if answer == "ha":
+#         data = await state.get_data()
+#         token_ = data.get("token")
+#         phone_ = data.get("phone")
+#         password = data.get("password")
+        
+#         user_login_, status = await user_login(phone=phone_, password=password)
+#         token_user = user_login_.get("token")
+
+#         try:
+#             response, status = await delete_user(token=token_user, phone=phone_, password=password)
+#             if status == 200:
+#                 await message.answer("✅ Siz ro'yxatdan muvaffaqiyatli o'chirildingiz.")
+#             else:
+#                 await message.answer("❌ O'chirishda muammo yuz berdi.")
+#         except Exception as e:
+#             await message.answer("⚠️ Xatolik yuz berdi. Keyinroq urinib ko‘ring.")
+    
+#     elif answer == "yoq" or answer == "yo‘q":
+#         await message.answer("❎ O'chirish bekor qilindi.")
+    
+#     else:
+#         await message.answer("Iltimos, faqat *Ha* yoki *Yo‘q* deb javob bering.", parse_mode='Markdown')
+#         return  # qayta so‘rash
+    
+#     await state.finish()  # holatni tozalaymiz
+
+
 @dp.message_handler(commands=['delete_user'], state='*')
-async def delete(message: types.Message, state: FSMContext):
-    await state.set_state(None)
-    data = await state.get_data()
-    ic(data)
-    token_ = data.get("token")
-    phone_ = data.get("phone")
-    password = data.get("password")
-    user_login_, status = await user_login(phone=phone_, password=password)
-    ic(user_login_)
-    token_user = user_login_.get("token")
-    ic(token_user)
-
-    try:
-        response, status = await delete_user(token=token_user, phone=phone_, password=password)
-        ic(response, status)
-
-        if status == 200:  # yoki o'zgaruvchining tuzilishiga qarab
-            await message.answer("Siz ro'yxatdan muvaffaqiyatli o'chirildingiz.")
-        else:
-            await message.answer("O'chirishda muammo yuz berdi.")
-    except Exception as e:
-        ic(e)
-        await message.answer("Xatolik yuz berdi. Iltimos, keyinroq urinib ko‘ring.")
+async def delete_user_confirm(message: types.Message, state: FSMContext):
+    await DeleteUser.confirm.set()
+    await message.answer("🔒 Siz rostdan ham ro‘yxatdan o‘chmoqchimisiz?\n\nIltimos, *Ha* yoki *Yo‘q* deb javob bering.", parse_mode="Markdown")
 
 
+@dp.message_handler(state=DeleteUser.confirm)
+async def handle_delete_confirmation(message: types.Message, state: FSMContext):
+    answer = message.text.strip().lower()
+
+    if answer == "ha":
+        data = await state.get_data()
+        token_ = data.get("token")
+        phone_ = data.get("phone")
+        password = data.get("password")
+
+        if not all([phone_, password]):
+            await message.answer("❗ Ma’lumotlar yetarli emas. Iltimos, qayta ro‘yxatdan o‘ting.")
+            await state.finish()
+            return
+
+        user_login_, status = await user_login(phone=phone_, password=password)
+        token_user = user_login_.get("token")
+
+        try:
+            response, status = await delete_user(token=token_user, phone=phone_, password=password)
+            if status == 200:
+                await message.answer("✅ Siz ro'yxatdan muvaffaqiyatli o'chirildingiz.")
+            else:
+                await message.answer("❌ O'chirishda muammo yuz berdi.")
+        except Exception as e:
+            await message.answer("⚠️ Xatolik yuz berdi. Keyinroq urinib ko‘ring.")
+
+    elif answer in ["yoq", "yo‘q", "yo'q"]:
+        await message.answer("❎ O'chirish bekor qilindi.")
+    else:
+        await message.answer("Iltimos, faqat *Ha* yoki *Yo‘q* deb javob bering.", parse_mode="Markdown")
+        return  # noto‘g‘ri javobda qayta kutadi
+
+    await state.finish()

@@ -28,3 +28,5 @@ class FullRegistration(StatesGroup):
     diplom_file = State()
     
     
+class DeleteUser(StatesGroup):
+    confirm = State()
