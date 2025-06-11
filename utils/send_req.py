@@ -15,6 +15,8 @@ async def auth_check(phone):
             return await response.text()
 
 
+import aiohttp
+
 async def user_register(phone, password):
     url = f"{main_url}/v2/auth/register"
     payload = {
@@ -28,7 +30,20 @@ async def user_register(phone, password):
     async with aiohttp.ClientSession() as session:
         async with session.post(url, json=payload, headers=headers) as response:
             status_ = response.status
-            return await response.json(), status_
+            content_type = response.headers.get("Content-Type", "")
+
+            if "application/json" in content_type:
+                data = await response.json()
+            else:
+                text = await response.text()
+                data = {
+                    "error": "Unexpected content type",
+                    "content_type": content_type,
+                    "raw_response": text
+                }
+
+            return data, status_
+
 
 async def user_verify(phone, code):
     url = f"{main_url}/v2/auth/verify"
