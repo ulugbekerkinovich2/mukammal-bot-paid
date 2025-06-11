@@ -133,7 +133,7 @@ async def password_user(message: types.Message, state: FSMContext):
         ic("Registered:", response)
         await Registration.verify.set()
     else:
-        await message.answer("Sms yuborish limiti cheklangan")
+        await message.answer("Sms yuborish limiti cheklangan 5 daqiqadan so'ng urinib ko'ring.")
 
 @dp.message_handler(state=Registration.verify)
 async def verify_user(message: types.Message, state: FSMContext):
