@@ -496,56 +496,53 @@ async def university_user(call: types.CallbackQuery, state: FSMContext):
     university_id = call.data.split("_")[1]
     await state.update_data(university_id=university_id)
     text_mess = "Ta'lim dargohi nomini kiriting:"
-    if university_id == 1:
+    if int(university_id) == 1:
         text_mess = "Ta'lim dargohi nomini kiriting:\nNamuna: 12-maktab"
-    elif university_id == 2:
+    elif int(university_id) == 2:
         text_mess = "Ta'lim dargohi nomini kiriting:\nLitsey: Diplomatiya litseyi"
-    elif university_id == 3:
+    elif int(university_id) == 3:
         text_mess = "Ta'lim dargohi nomini kiriting:\nToshkent turizm va mehmonxona menejmenti texnikumi"
-    elif university_id == 4:
+    elif int(university_id) == 4:
         text_mess = "Ta'lim dargohi nomini kiriting:\nToshkent moliya instituti"
     # await call.message.answer("📆 Tamomlagan yilingizni kiriting.\nNamuna: 2022")
     await call.message.answer(text_mess)
     await FullRegistration.edu_name.set()
 
-@dp.callback_query_handler(lambda call: call.data == "back_to_region", state="*")
-async def back_to_region(call: types.CallbackQuery, state: FSMContext):
-    data = await state.get_data()
-    token = data.get("token")
-    # extra_phone = message.text.strip()
-    # await state.update_data(extra_phone=extra_phone)
-    await call.answer("Ta’lim dargohi joylashgan viloyatni tanlang.", reply_markup=ReplyKeyboardRemove())
-    response, status_ = await fetch_regions(token)
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    for region in response:
-        keyboard.insert(
-            InlineKeyboardButton(
-                text=region['name_uz'],
-                callback_data=f"region_{region['id']}"
-            )
-        )
-    keyboard.insert(
-        InlineKeyboardButton(
-            text="🔙 Ortga",
-            callback_data="back_to_region"
-        )
-    )
-    await bot.send_message(
-        chat_id=call.chat.id,
-        text="📍 Viloyatlardan birini tanlang:",
-        reply_markup=keyboard
-    )
-    await FullRegistration.select_edu_plase.set()
+# @dp.callback_query_handler(lambda call: call.data == "back_to_region", state="*")
+# async def back_to_region(call: types.CallbackQuery, state: FSMContext):
+#     data = await state.get_data()
+#     token = data.get("token")
+#     response, status_ = await fetch_regions(token)
 
-@dp.callback_query_handler(lambda call: call.data == "back_to_district", state="*")
+#     keyboard = InlineKeyboardMarkup(row_width=2)
+#     for region in response:
+#         keyboard.insert(
+#             InlineKeyboardButton(
+#                 text=region['name_uz'],
+#                 callback_data=f"region_{region['id']}"
+#             )
+#         )
+
+#     await state.set_state(FullRegistration.select_edu_plase)  # ✅ State oldin yangilanadi
+
+#     await bot.edit_message_text(
+#         chat_id=call.message.chat.id,
+#         message_id=call.message.message_id,
+#         text="📍 Viloyatlardan birini tanlang:",
+#         reply_markup=keyboard
+#     )
+
+
+
+@dp.callback_query_handler(lambda call: call.data.startswith("back_to_district"), state="*")
 async def back_to_district(call: types.CallbackQuery, state: FSMContext):
-    region_id = call.data.split("_")[1]
-    await state.update_data(region_id=region_id)
+    import time
+    print('keldi back_to_district')
     data_ = await state.get_data()
-    ic(data_)
-    ic(region_id)
     token = data_.get("token")
+    region_id = data_.get("region_id")
     response, status_ = await district_locations(int(region_id), token)
+    print(status_)
     keyboard = InlineKeyboardMarkup(row_width=2)
     for region in response:
         keyboard.insert(
@@ -557,15 +554,46 @@ async def back_to_district(call: types.CallbackQuery, state: FSMContext):
     keyboard.insert(
         InlineKeyboardButton(
             text="🔙 Ortga",
-            callback_data="back_to_district"
+            # callback_data="back_to_region"
+            callback_data=f"back_to_region_{int(time.time())}"
         )
     )
-    await bot.send_message(
+
+    await state.set_state(FullRegistration.district_place)  # ✅ Birinchi
+
+    await bot.edit_message_text(
         chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
         text="📍 Tumanlardan birini tanlang:",
         reply_markup=keyboard
     )
-    await FullRegistration.district_place.set()
+    print('ketdi javob 568')
+
+@dp.callback_query_handler(lambda call: call.data.startswith("back_to_region"), state="*")
+async def back_to_region(call: types.CallbackQuery, state: FSMContext):
+    await call.answer(cache_time=0)
+    data = await state.get_data()
+    token = data.get("token")
+    response, status_ = await fetch_regions(token)
+
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    for region in response:
+        keyboard.insert(
+            InlineKeyboardButton(
+                text=region['name_uz'],
+                callback_data=f"region_{region['id']}"
+                
+            )
+        )
+
+    await state.set_state(FullRegistration.select_edu_plase)  # ✅ State oldin yangilanadi
+
+    await bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text="📍 Viloyatlardan birini tanlang:",
+        reply_markup=keyboard
+    )
 
 @dp.message_handler(state=FullRegistration.edu_name)
 async def university_name_user(message: types.Message, state: FSMContext):
