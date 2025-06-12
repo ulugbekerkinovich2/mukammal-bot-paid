@@ -99,6 +99,9 @@ async def phone_number(message: types.Message, state: FSMContext):
         phone = "+998" + raw_text
 
     await state.update_data(phone=phone)
+
+    if not phone.startswith('+'):
+        phone = '+' + phone
     ic(phone, 3)
     data_ = await auth_check(phone=phone)
     ic("auth_check result:", data_, type(data_))
