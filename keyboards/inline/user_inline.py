@@ -1,14 +1,16 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from data.config import main_url
-
-# def shortify_url(orginal_url):
-#     short_url = shorten_url(orginal_url)
-#     return short_url
-def share_button(token, refresh_token):
+from utils.send_req import shorten_url_async
+async def shortify_url(orginal_url):
+    short_url = await shorten_url_async(orginal_url)
+    return short_url['short_url']
+async def share_button(token, refresh_token):
+    short_url = await shortify_url(f"https://mentalaba.uz/application?from_bot={token}&from_bot_refresh={refresh_token}")
+    print(short_url)
     share_button = InlineKeyboardMarkup(row_width=1).add(
         InlineKeyboardButton(
             text="🔗 Hujjat topshirish",
-            url=f"https://mentalaba.uz/application?from_bot={token}&from_bot_refresh={refresh_token}"
+            url=short_url
         )
     )
     return share_button

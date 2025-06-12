@@ -1,6 +1,7 @@
 import aiohttp
 from data.config import main_url
 from icecream import ic
+import requests
 async def auth_check(phone):
     url = f"{main_url}/v1/auth/check"
     payload = {
@@ -261,3 +262,19 @@ async def update_application_form(token, district_id, region_id, institution_nam
                 json_data = {}
 
             return json_data, status_
+        
+    
+# import aiohttp
+# import asyncio
+
+async def shorten_url_async(long_url):
+    print(long_url)
+    url = "https://global.misterdev.uz/shorten/"
+    payload = {
+        "url": str(long_url)
+    }
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, json=payload) as response:
+            response.raise_for_status()  # xatolik bo‘lsa except blokga tushadi
+            return await response.json()

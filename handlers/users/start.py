@@ -157,7 +157,7 @@ async def verify_user(message: types.Message, state: FSMContext):
         await state.update_data(token=token, auth_key=auth_key, haveApplicationForm=haveApplicationForm)
         # Aytaylik, server True/False yoki JSON qaytaradi
         if status_ == 201:
-            await message.answer("️️Passport yoki ID karta seriya raqamini kiriting.")
+            await message.answer("️️Passport yoki ID karta seriya raqamini kiriting.\nNamuna: AC1234567")
             await Registration.pinfl.set()
         else:
             await message.answer("❌ Kod noto‘g‘ri yoki muddati o‘tgan. Qayta urinib ko‘ring.")
@@ -262,7 +262,7 @@ async def birth_date_user(message: types.Message, state: FSMContext):
                 # "📄 <i>Iltimos, davom etish uchun kerakli bo‘limni tanlang.</i>"
             )
             # Foydalanuvchiga yuborish
-            share_button_ = share_button(token=token, refresh_token=refreshToken)
+            share_button_ = await share_button(token=token, refresh_token=refreshToken)
             await message.answer(text, reply_markup=share_button_, parse_mode="HTML")  
             await state.set_state(None)  
 
@@ -412,6 +412,12 @@ async def extra_phone_user(message: types.Message, state: FSMContext):
                 callback_data=f"region_{region['id']}"
             )
         )
+    keyboard.insert(
+        InlineKeyboardButton(
+            text="🔙 Ortga",
+            callback_data="back_to_region"
+        )
+    )
 
     await bot.send_message(
         chat_id=message.chat.id,
@@ -429,6 +435,13 @@ async def region_user(call: types.CallbackQuery, state: FSMContext):
     ic(region_id)
     token = data_.get("token")
     response, status_ = await district_locations(int(region_id), token)
+
+    await bot.edit_message_reply_markup(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        reply_markup=None
+    )
+
     keyboard = InlineKeyboardMarkup(row_width=2)
     for region in response:
         keyboard.insert(
@@ -437,7 +450,12 @@ async def region_user(call: types.CallbackQuery, state: FSMContext):
                 callback_data=f"location_{region['id']}"
             )
         )
-
+    keyboard.insert(
+        InlineKeyboardButton(
+            text="🔙 Ortga",
+            callback_data="back_to_district"
+        )
+    )
     await bot.send_message(
         chat_id=call.message.chat.id,
         text="📍 Tumanlardan birini tanlang:",
@@ -474,10 +492,77 @@ async def location_user(call: types.CallbackQuery, state: FSMContext):
 async def university_user(call: types.CallbackQuery, state: FSMContext):
     university_id = call.data.split("_")[1]
     await state.update_data(university_id=university_id)
-
+    text_mess = "Ta'lim dargohi nomini kiriting:"
+    if university_id == 1:
+        text_mess = "Ta'lim dargohi nomini kiriting:\nNamuna: 12-maktab"
+    elif university_id == 2:
+        text_mess = "Ta'lim dargohi nomini kiriting:\nLitsey: Diplomatiya litseyi"
+    elif university_id == 3:
+        text_mess = "Ta'lim dargohi nomini kiriting:\nToshkent turizm va mehmonxona menejmenti texnikumi"
+    elif university_id == 4:
+        text_mess = "Ta'lim dargohi nomini kiriting:\nToshkent moliya instituti"
     # await call.message.answer("📆 Tamomlagan yilingizni kiriting.\nNamuna: 2022")
-    await call.message.answer("Ta'lim dargohi nomini kiriting:\nNamuna: Farg'ona universiteti")
+    await call.message.answer(text_mess)
     await FullRegistration.edu_name.set()
+
+@dp.callback_query_handler(lambda call: call.data == "back_to_region", state="*")
+async def back_to_region(call: types.CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    token = data.get("token")
+    # extra_phone = message.text.strip()
+    # await state.update_data(extra_phone=extra_phone)
+    await call.answer("Ta’lim dargohi joylashgan viloyatni tanlang.", reply_markup=ReplyKeyboardRemove())
+    response, status_ = await fetch_regions(token)
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    for region in response:
+        keyboard.insert(
+            InlineKeyboardButton(
+                text=region['name_uz'],
+                callback_data=f"region_{region['id']}"
+            )
+        )
+    keyboard.insert(
+        InlineKeyboardButton(
+            text="🔙 Ortga",
+            callback_data="back_to_region"
+        )
+    )
+    await bot.send_message(
+        chat_id=call.chat.id,
+        text="📍 Viloyatlardan birini tanlang:",
+        reply_markup=keyboard
+    )
+    await FullRegistration.select_edu_plase.set()
+
+@dp.callback_query_handler(lambda call: call.data == "back_to_district", state="*")
+async def back_to_district(call: types.CallbackQuery, state: FSMContext):
+    region_id = call.data.split("_")[1]
+    await state.update_data(region_id=region_id)
+    data_ = await state.get_data()
+    ic(data_)
+    ic(region_id)
+    token = data_.get("token")
+    response, status_ = await district_locations(int(region_id), token)
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    for region in response:
+        keyboard.insert(
+            InlineKeyboardButton(
+                text=region['name_uz'],
+                callback_data=f"location_{region['id']}"
+            )
+        )
+    keyboard.insert(
+        InlineKeyboardButton(
+            text="🔙 Ortga",
+            callback_data="back_to_district"
+        )
+    )
+    await bot.send_message(
+        chat_id=call.message.chat.id,
+        text="📍 Tumanlardan birini tanlang:",
+        reply_markup=keyboard
+    )
+    await FullRegistration.district_place.set()
 
 @dp.message_handler(state=FullRegistration.edu_name)
 async def university_name_user(message: types.Message, state: FSMContext):
@@ -490,7 +575,7 @@ async def university_name_user(message: types.Message, state: FSMContext):
 async def ended_year_user(message: types.Message, state: FSMContext):
     ended_year = message.text.strip()
     await state.update_data(ended_year=ended_year)
-    await message.answer("Diplom faylini yuklang file formatda.")
+    await message.answer("Diplom faylini yuklang file formatda.\nRuxsat etilgan formatlar: .pdf, .jpg, .jpeg, .png")
     await FullRegistration.diplom_file.set()
 
 @dp.message_handler(state=FullRegistration.diplom_file, content_types=types.ContentType.DOCUMENT)
@@ -533,7 +618,7 @@ async def edu_name_user(message: types.Message, state: FSMContext):
         "🎓 <b>Endi siz tanlagan universitetlarga hujjat topshirish imkoniyatiga egasiz.</b>\n\n"
         # "📄 <i>Iltimos, davom etish uchun kerakli bo‘limni tanlang.</i>"
     )
-    share_button_ = share_button(token=token_, refresh_token=refreshToken)
+    share_button_ = await share_button(token=token_, refresh_token=refreshToken)
     # Foydalanuvchiga yuborish
     await message.answer(text, reply_markup=share_button_, parse_mode="HTML")
 
@@ -578,7 +663,7 @@ async def pinfl_user(message: types.Message, state: FSMContext):
     await state.update_data(token=token_)
     await state.update_data(refreshToken=refreshToken)
     if user_educations is None:
-        await message.answer("Passport yoki ID karta seriya raqamini kiriting.", reply_markup=ReplyKeyboardRemove())
+        await message.answer("Passport yoki ID karta seriya raqamini kiriting.\nNamuna: AC12345678", reply_markup=ReplyKeyboardRemove())
         await Registration.pinfl.set()
         return
 
@@ -593,7 +678,7 @@ async def pinfl_user(message: types.Message, state: FSMContext):
             return
         if first_name is None:
             await state.update_data(token=token_)
-            await message.answer("️️Passport yoki ID karta seriya raqamini kiriting.")
+            await message.answer("️️Passport yoki ID karta seriya raqamini kiriting.\nNamuna: AC12345678")
             await Registration.pinfl.set()
             # await message.answer('kirdiz')
         else:
@@ -602,7 +687,7 @@ async def pinfl_user(message: types.Message, state: FSMContext):
                 "🎓 <b>Endi siz tanlagan universitetlarga hujjat topshirish imkoniyatiga egasiz.</b>\n\n"
                 # "📄 <i>Iltimos, davom etish uchun kerakli bo‘limni tanlang.</i>"
             )
-            share_button_ = share_button(token=token_, refresh_token=refreshToken)
+            share_button_ = await share_button(token=token_, refresh_token=refreshToken)
             # Foydalanuvchiga yuborish
             await message.answer(text, reply_markup=share_button_, parse_mode="HTML")
             await FullRegistration.next()
