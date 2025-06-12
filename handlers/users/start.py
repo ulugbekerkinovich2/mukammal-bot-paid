@@ -98,14 +98,14 @@ async def phone_number(message: types.Message, state: FSMContext):
             return
         phone = "+998" + raw_text
 
-    await state.update_data(phone=phone)
+
 
     if not phone.startswith('+'):
         phone = '+' + phone
     ic(phone, 3)
     data_ = await auth_check(phone=phone)
     ic("auth_check result:", data_, type(data_))
-
+    await state.update_data(phone=phone)
     if data_ == "true":
         await message.answer("️️🔐 Iltimos, parolingizni kiriting. U kamida 8 ta belgidan iborat bo‘lishi lozim.", reply_markup=ReplyKeyboardRemove())
         await Registration.login.set()
