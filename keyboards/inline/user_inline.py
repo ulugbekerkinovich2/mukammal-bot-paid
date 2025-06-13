@@ -19,3 +19,8 @@ gender_button = InlineKeyboardMarkup(row_width=2).add(
     InlineKeyboardButton(text="👨 Erkak", callback_data="male"),
     InlineKeyboardButton(text="👩 Ayol", callback_data="female")
 )
+
+help_button = InlineKeyboardMarkup(row_width=1).add(
+    InlineKeyboardButton(text="📝 Yordam", callback_data="help_uz"),
+    InlineKeyboardButton(text="👤 Ma'lumotlarni qaytadan kitirish", callback_data="rewrite")
+)

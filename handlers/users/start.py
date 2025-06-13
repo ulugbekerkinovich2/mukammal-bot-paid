@@ -11,7 +11,7 @@ from utils.send_req import auth_check, user_register, user_verify, user_info, us
 upload_file, me, update_application_form
 from aiogram.types import ReplyKeyboardRemove
 from datetime import datetime
-from keyboards.inline.user_inline import share_button, gender_button
+from keyboards.inline.user_inline import share_button, gender_button, help_button
 from data.config import CHANNEL_ID
 from icecream import ic
 from states.userStates import Registration, FullRegistration, DeleteUser
@@ -220,11 +220,14 @@ async def birth_date_user(message: types.Message, state: FSMContext):
         response_data, status = await user_info(formatted_date, pinfl, token)
         ic(response_data, status)
         if status == 409:
-            await message.answer(response_data['message'])
+            await message.answer(response_data['message'], reply_markup=help_button)
             await state.finish()
             return
         elif status == 404:
-            await message.answer_photo("https://api.mentalaba.uz/logo/b3ccc6f7-aaad-42e2-a256-5cc8e8dc0d70.webp", caption="Profil rasmini yuklang\n\nHajmi 5 mb dan katta bo'lmagan, .png, .jpg, .jpeg formatdagi oq yoki ko’k fonda olingan 3x4 razmerdagi rasmingizni yuklang.")
+            await message.answer_photo(
+             photo="https://api.mentalaba.uz/logo/b3ccc6f7-aaad-42e2-a256-5cc8e8dc0d70.webp",
+             caption="Profil rasmini yuklang\n\nHajmi 5 mb dan katta bo'lmagan, .png, .jpg, .jpeg formatdagi oq yoki ko’k fonda olingan 3x4 razmerdagi rasmingizni yuklang."
+             )
             await FullRegistration.profile_image.set()
         
         me_user, status_ = await me(token=token)
@@ -272,6 +275,16 @@ async def birth_date_user(message: types.Message, state: FSMContext):
     except ValueError:
         await message.answer("❌ Noto‘g‘ri sana formati. Iltimos, DD-MM-YYYY formatida kiriting (masalan: 28-08-2000).")
 
+
+@dp.callback_query_handler(lambda call: call.data.startswith("help_uz"), state="*")
+async def help_uz(call: types.CallbackQuery, state: FSMContext):
+    await call.message.answer("" \
+    "Agar sizda savollar, texnik muammolar yoki tizimdan foydalanish bo‘yicha tushunmovchiliklar bo‘lsa, iltimos, bizning rasmiy yordam markazimizga murojaat qiling: @Mentalaba_help")
+
+@dp.callback_query_handler(lambda call: call.data.startswith("rewrite"), state="*")
+async def rewrite(call: types.CallbackQuery, state: FSMContext):
+    await state.finish()  # Avvalgi holatni tugatish
+    await bot_start(call.message, state)
 
 
 import os
