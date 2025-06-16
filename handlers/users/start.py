@@ -289,34 +289,42 @@ async def rewrite(call: types.CallbackQuery, state: FSMContext):
 
 import os
 
-@dp.message_handler(state=FullRegistration.profile_image, content_types=types.ContentType.PHOTO)
+@dp.message_handler(state=FullRegistration.profile_image, content_types=types.ContentTypes.PHOTO | types.ContentTypes.DOCUMENT)
 async def profile_image_user(message: types.Message, state: FSMContext):
     data = await state.get_data()
     token_ = data.get("token")
 
-    # 1. Rasmni olish
-    photo = message.photo[-1]
-    file = await bot.get_file(photo.file_id)
-    file_path = file.file_path
+    # Rasmni olish
+    if message.photo:
+        photo = message.photo[-1]
+        file = await bot.get_file(photo.file_id)
+        file_id = photo.file_id
+    elif message.document and message.document.mime_type.startswith("image/"):
+        file = await bot.get_file(message.document.file_id)
+        file_id = message.document.file_id
+    else:
+        await message.answer("Iltimos, rasm yuboring.")
+        return
 
-    # 2. Faylni lokalga yuklab olish
+    file_path = file.file_path
     photo_bytes = await bot.download_file(file_path)
-    temp_path = f"/tmp/{photo.file_id}.jpg"
+    temp_path = f"/tmp/{file_id}.jpg"
 
     with open(temp_path, "wb") as f:
         f.write(photo_bytes.read())
 
-    # 3. Upload qilish
+    # Upload qilish
     response, status = await upload_image(token_, temp_path)
     print(response, status)
-    # 4. Faylni o‘chirish
+
     os.remove(temp_path)
 
-    # 5. Statega yozish (agar kerak bo‘lsa)
-    await state.update_data(profile_image=response.get("url"))  # yoki image_id
+    # Statega yozish (agar kerak bo‘lsa)
+    await state.update_data(profile_image=response.get("url"))
 
     await message.answer("Familiyangizni kiriting.")
     await FullRegistration.surename.set()
+
 
 @dp.message_handler(state=FullRegistration.surename)
 async def surename_user(message: types.Message, state: FSMContext):
@@ -619,7 +627,7 @@ async def university_name_user(message: types.Message, state: FSMContext):
 async def ended_year_user(message: types.Message, state: FSMContext):
     ended_year = message.text.strip()
     await state.update_data(ended_year=ended_year)
-    await message.answer("Diplom faylini yuklang file formatda.\nRuxsat etilgan formatlar: .pdf, .jpg, .jpeg, .png")
+    await message.answer("Diplom faylini yuklang file formatda.\nRuxsat etilgan formatlar: PDF, DOC, DOCX\nFayl hajmi 5mb dan katta bo'lmasligi kerak")
     await FullRegistration.diplom_file.set()
 
 @dp.message_handler(state=FullRegistration.diplom_file, content_types=types.ContentType.DOCUMENT)
