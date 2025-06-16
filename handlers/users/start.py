@@ -627,7 +627,7 @@ async def university_name_user(message: types.Message, state: FSMContext):
 async def ended_year_user(message: types.Message, state: FSMContext):
     ended_year = message.text.strip()
     await state.update_data(ended_year=ended_year)
-    await message.answer("Diplom faylini yuklang fayl formatda yuboring.\n!Fayl va rasmni telegram orqali yuborishda hajmini siqish funksiyasidan foydalanmasdan yuboring\n\nRuxsat etilgan formatlar: PDF, JPG, JPEG, PNG\nFayl hajmi 5mb dan katta bo'lmasligi kerak")
+    await message.answer("Diplom faylini yuklang fayl formatda yuboring.\nFayl va rasmni telegram orqali yuborishda hajmini siqish funksiyasidan foydalanmasdan yuboring\n\nRuxsat etilgan formatlar: PDF, JPG, JPEG, PNG\nFayl hajmi 5mb dan katta bo'lmasligi kerak")
     await FullRegistration.diplom_file.set()
 
 @dp.message_handler(state=FullRegistration.diplom_file, content_types=types.ContentType.DOCUMENT)
