@@ -29,13 +29,13 @@ async def bot_start(message: types.Message, state: FSMContext):
             member = await bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
 
             if member.status not in ["member", "creator", "administrator"]:
-                join_kb = InlineKeyboardMarkup().add(
-                    InlineKeyboardButton("🚀 Obuna bo‘ling va imkoniyatlardan foydalaning!" \
-                    "\n\n✅ Obuna bo‘lganingizdan so‘ng pastdagi tugmani bosing.", url="https://t.me/mentalaba_uz"),
+                join_kb = InlineKeyboardMarkup(row_width=1).add(
+                    InlineKeyboardButton("📲 Kanalga obuna bo‘lish", url="https://t.me/mentalaba_uz"),
                     InlineKeyboardButton("✅ Obuna bo‘ldim", callback_data="check_sub")
                 )
+
                 await message.answer(
-                    "❗️Iltimos, Mentalaba kanaliga obuna bo‘ling:\n\n👉 https://t.me/mentalaba_uz",
+                    "Quyidagi kanalga obuna bo‘ling va keyin 'Obuna bo‘ldim' tugmasini bosing 👇",
                     reply_markup=join_kb
                 )
                 return
@@ -627,7 +627,7 @@ async def university_name_user(message: types.Message, state: FSMContext):
 async def ended_year_user(message: types.Message, state: FSMContext):
     ended_year = message.text.strip()
     await state.update_data(ended_year=ended_year)
-    await message.answer("Diplom faylini yuklang file formatda.\nRuxsat etilgan formatlar: PDF, DOC, DOCX\nFayl hajmi 5mb dan katta bo'lmasligi kerak")
+    await message.answer("Diplom faylini yuklang fayl formatda yuboring.\n!Fayl va rasmni telegram orqali yuborishda hajmini siqish funksiyasidan foydalanmasdan yuboring\n\nRuxsat etilgan formatlar: PDF, JPG, JPEG, PNG\nFayl hajmi 5mb dan katta bo'lmasligi kerak")
     await FullRegistration.diplom_file.set()
 
 @dp.message_handler(state=FullRegistration.diplom_file, content_types=types.ContentType.DOCUMENT)
