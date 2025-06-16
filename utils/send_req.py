@@ -268,7 +268,7 @@ async def update_application_form(token, district_id, region_id, institution_nam
 # import asyncio
 
 async def shorten_url_async(long_url):
-    print(long_url)
+    # print(long_url)
     url = "https://global.misterdev.uz/shorten/"
     payload = {
         "url": str(long_url)

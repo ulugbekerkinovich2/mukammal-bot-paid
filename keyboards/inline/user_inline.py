@@ -5,12 +5,13 @@ async def shortify_url(orginal_url):
     short_url = await shorten_url_async(orginal_url)
     return short_url['short_url']
 async def share_button(token, refresh_token):
-    short_url = await shortify_url(f"https://mentalaba.uz/application?from_bot={token}&from_bot_refresh={refresh_token}")
-    print(short_url)
+    org_url = f"https://mentalaba.uz/application?from_bot={token}&from_bot_refresh={refresh_token}"
+    short_url = await shortify_url(org_url)
+    # print(short_url)
     share_button = InlineKeyboardMarkup(row_width=1).add(
         InlineKeyboardButton(
             text="🔗 Hujjat topshirish",
-            url=short_url
+            url=org_url
         )
     )
     return share_button
