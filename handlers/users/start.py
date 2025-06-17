@@ -232,6 +232,9 @@ async def birth_date_user(message: types.Message, state: FSMContext):
         
         me_user, status_ = await me(token=token)
         ic(me_user, status_)
+        if status_ == 401:
+            await message.answer("❌ Parol noto'g'ri kiritilgan!")
+            return
         user_educations = me_user.get("user_educations")
         ic(226, user_educations, type(user_educations))
         if user_educations is None:
@@ -702,12 +705,15 @@ async def pinfl_user(message: types.Message, state: FSMContext):
     token = user_data.get("token")
     refreshToken = user_data.get("refreshToken")
     response, status_ = await user_login(phone=phone, password=password)
-    ic(response, status_)
+    ic(708, response, status_)
     token_ = response.get("token")
     await state.update_data(token=response.get("token"), refreshToken=refreshToken)
     
     me_user, status_ = await me(token=token_)
     ic(me_user, status_)
+    if status_ == 401:
+        await message.answer("❌ Parol noto'g'ri kiritilgan!")
+        return
     user_educations = me_user.get("user_educations")
     ic(user_educations, type(user_educations))
     refreshToken = response.get("refreshToken")
