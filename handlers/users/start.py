@@ -18,6 +18,12 @@ from states.userStates import Registration, FullRegistration, DeleteUser
 from utils.my_redis import redis
 import json
 from utils.send_req import get_user, add_chat_id, change_password, reset_password, user_verify_by_id
+
+from redis.asyncio import Redis
+from aiogram import types
+from aiogram.dispatcher import FSMContext
+# from loader import dp, redis  # siz allaqachon redis = Redis(...) deb yozgansiz
+
 @dp.message_handler(CommandStart(), state="*")
 async def bot_start(message: types.Message, state: FSMContext):
     await state.finish()
@@ -823,36 +829,38 @@ async def pinfl_user(message: types.Message, state: FSMContext):
             # Foydalanuvchiga yuborish
             await message.answer(text, reply_markup=share_button_, parse_mode="HTML")
             await FullRegistration.next()
-import time
 
-# Global dict: user_id -> oxirgi forget_password bosgan vaqti (timestamp)
-user_last_forget_click: dict[int, float] = {}
 
-@dp.callback_query_handler(lambda call: call.data.startswith("forget_password"), state="*")
+@dp.callback_query_handler(lambda call: call.data == "forget_password", state="*")
 async def forget_passwords(call: types.CallbackQuery, state: FSMContext):
     user_id = call.from_user.id
-    now = time.time()
-    last_click = user_last_forget_click.get(user_id, 0)
+    redis_key = f"forget_password_lock:{user_id}"
 
-    # 120 sekund = 2 daqiqa
-    if now - last_click < 60:
-        remaining = int(60 - (now - last_click))
-        await call.answer(f"⏱ Kuting, {remaining} soniyadan keyin qayta urining.", show_alert=True)
+    # 1. Redisda lock borligini tekshirish
+    if await redis.exists(redis_key):
+        ttl = await redis.ttl(redis_key)
+        await call.answer(f"❗ Kuting, {ttl} soniyadan so‘ng qayta urinishingiz mumkin.", show_alert=True)
         return
 
-    # Vaqtni yangilaymiz
-    user_last_forget_click[user_id] = now
+    # 2. 120 soniyaga lock o‘rnatish
+    await redis.set(redis_key, "locked", ex=60)
 
-    # Davom etish
+    # 3. Jarayonni davom ettirish
     data = await state.get_data()
     phone = data.get("phone")
+
+    # Agar phone yo'q bo‘lsa, oldindan tekshirishni unutmang
+    if not phone:
+        await call.answer("❗ Telefon raqamingiz topilmadi. Avval ro‘yxatdan o‘ting.", show_alert=True)
+        return
 
     response_data, status = await change_password(phone=phone)
     state_id = response_data.get("id")
 
     await state.update_data(state_id=state_id)
-    await call.answer("📨 Raqamingizga yuborilgan tasdiqlash kodini kiriting.")
+    await call.answer("✅ Kod yuborildi. Iltimos, tasdiqlash kodini kiriting.")
     await FullRegistration.change_password.set()
+
 
 
 @dp.message_handler(state=FullRegistration.change_password)
