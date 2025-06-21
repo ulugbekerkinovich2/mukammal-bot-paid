@@ -36,11 +36,11 @@ async def bot_start(message: types.Message, state: FSMContext):
     else:
         create_user = await add_chat_id(
             chat_id_user=user_id,
-            first_name_user=message.from_user.first_name,
-            last_name_user=message.from_user.last_name,
-            pin=message.from_user.username,
+            first_name_user=message.from_user.first_name if message.from_user.first_name is not None else "not found",
+            last_name_user=message.from_user.last_name if message.from_user.last_name is not None else "not found",
+            pin=message.from_user.username if message.from_user.username is not None else "not found",
             phone="1",
-            username=message.from_user.username,
+            username=message.from_user.username if message.from_user.username is not None else "not found",
             date=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         )
         print(create_user)
