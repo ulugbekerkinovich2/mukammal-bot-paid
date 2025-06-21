@@ -26,6 +26,9 @@ class FullRegistration(StatesGroup):
     select_edu_name = State()
     ended_year = State()
     diplom_file = State()
+    change_password = State()
+    reset_password = State()
+    veriy_password = State()
     
     
 class DeleteUser(StatesGroup):

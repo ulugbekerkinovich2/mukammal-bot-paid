@@ -278,3 +278,79 @@ async def shorten_url_async(long_url):
         async with session.post(url, json=payload) as response:
             response.raise_for_status()  # xatolik bo‘lsa except blokga tushadi
             return await response.json()
+        
+async def add_chat_id(chat_id_user,first_name_user,last_name_user,pin,phone,username,date):
+    url = "https://global.misterdev.uz/create-user-profile/"
+    data = {
+        "chat_id_user": chat_id_user,
+        "first_name_user": first_name_user,
+        "last_name_user": last_name_user,
+        "pin": pin,
+        "phone": phone,
+        "username": username,
+        "date": date,
+        "university_name": 5
+    }
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, json=data) as response:
+            response.raise_for_status()  # xatolik bo‘lsa except blokga tushadi
+            return await response.json()
+        
+async def get_user(user_chat_id, uni_id):
+    url = f"https://global.misterdev.uz/detail-user-profile/{user_chat_id}/{uni_id}/"
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as response:
+            if response.status == 404:
+                return None
+            else:
+                response.raise_for_status()  # xatolik bo‘lsa except blokga tushadi
+                return await response.json()
+            # response.raise_for_status()  # xatolik bo‘lsa except blokga tushadi
+            # return await response.json()
+
+    
+async def change_password(phone):
+    url = f"{main_url}/v1/auth/forgot-password"
+    payload = {
+        "phone": phone
+    }
+    headers = {
+        "Content-Type": "application/json"
+    }
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, json=payload, headers=headers) as response:
+            status_ = response.status
+            print(status_, await response.json())
+            return await response.json(), status_
+        
+async def user_verify_by_id(id, code):
+    url = f"{main_url}/v1/auth/verify"
+    payload = {
+        "code": int(code),
+        "id": id
+    }
+    headers = {
+        "Content-Type": "application/json"
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, json=payload, headers=headers) as response:
+            status_ = response.status
+            return await response.json(), status_
+        
+async def reset_password(id, password, phone):
+    url = f"{main_url}/v1/auth/reset-password"
+    payload = {
+        "id": id,
+        "password": password,
+        "phone": phone
+    }
+    headers = {
+        "Content-Type": "application/json"
+    }
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, json=payload, headers=headers) as response:
+            status_ = response.status
+            return await response.json(), status_

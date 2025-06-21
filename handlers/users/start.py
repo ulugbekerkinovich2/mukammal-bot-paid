@@ -2,7 +2,7 @@ from aiogram import types
 from aiogram.dispatcher.filters.builtin import CommandStart
 from aiogram.dispatcher import FSMContext
 from loader import dp, bot
-from keyboards.default.userKeyboard import keyboard_user, strong_pass, continue_button
+from keyboards.default.userKeyboard import keyboard_user, strong_pass, continue_button, restart_markup
 from aiogram.types import ContentType
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import re
@@ -11,17 +11,33 @@ from utils.send_req import auth_check, user_register, user_verify, user_info, us
 upload_file, me, update_application_form
 from aiogram.types import ReplyKeyboardRemove
 from datetime import datetime
-from keyboards.inline.user_inline import share_button, gender_button, help_button
+from keyboards.inline.user_inline import share_button, gender_button, help_button, forget_password_button
 from data.config import CHANNEL_ID
 from icecream import ic
 from states.userStates import Registration, FullRegistration, DeleteUser
-
-
+from utils.my_redis import redis
+import json
+from utils.send_req import get_user, add_chat_id, change_password, reset_password, user_verify_by_id
 @dp.message_handler(CommandStart(), state="*")
 async def bot_start(message: types.Message, state: FSMContext):
     await state.finish()
     user_id = message.from_user.id
     data = await state.get_data()
+    get_user_id = await get_user(user_id, 5)
+    if get_user_id is not None:
+        if get_user_id['id'] is not None:
+            print(get_user_id['id'])
+    else:
+        create_user = await add_chat_id(
+            chat_id_user=user_id,
+            first_name_user=message.from_user.first_name,
+            last_name_user=message.from_user.last_name,
+            pin=message.from_user.username,
+            phone="1",
+            username=message.from_user.username,
+            date=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        )
+        print(create_user)
 
     # Avval tekshirilgan bo‘lsa qayta so‘ralmasin
     if not data.get("subscription_checked"):
@@ -86,6 +102,8 @@ async def check_subscription(callback_query: types.CallbackQuery, state: FSMCont
 
 @dp.message_handler(content_types=[ContentType.TEXT, ContentType.CONTACT], state=Registration.phone)
 async def phone_number(message: types.Message, state: FSMContext):
+    user_chat_id = message.from_user.id
+    
     if message.content_type == ContentType.CONTACT:
         phone = message.contact.phone_number
         await message.answer("Raqamingiz qabul qilindi", reply_markup=ReplyKeyboardRemove())
@@ -100,10 +118,20 @@ async def phone_number(message: types.Message, state: FSMContext):
 
 
 
+
     if not phone.startswith('+'):
         phone = '+' + phone
     ic(phone, 3)
+    key = f"{user_chat_id}_phone"
+    data = {
+        "phone": phone
+    }
+
+    if not await redis.exists(key):
+        await redis.set(key, json.dumps(data), ex=157680000)
+
     data_ = await auth_check(phone=phone)
+
     ic("auth_check result:", data_, type(data_))
     await state.update_data(phone=phone)
     if data_ == "true":
@@ -233,9 +261,11 @@ async def birth_date_user(message: types.Message, state: FSMContext):
         me_user, status_ = await me(token=token)
         ic(me_user, status_)
         if status_ == 401:
-            await message.answer("❌ Parol noto'g'ri kiritilgan!")
+            await message.answer("❌ Parol noto'g'ri kiritilgan!, Qayta urinib ko‘ring.", reply_markup=forget_password_button)
             return
         user_educations = me_user.get("user_educations")
+        auth_key = me_user.get("auth_key")
+        await state.update_data(auth_key=auth_key)
         ic(226, user_educations, type(user_educations))
         if user_educations is None:
             await message.answer("Ta’lim ma'lumotlaringizni to'ldiring.") #, reply_markup=continue_button)
@@ -271,12 +301,53 @@ async def birth_date_user(message: types.Message, state: FSMContext):
                 # "📄 <i>Iltimos, davom etish uchun kerakli bo‘limni tanlang.</i>"
             )
             # Foydalanuvchiga yuborish
-            share_button_ = await share_button(token=token, refresh_token=refreshToken)
+            user_chat_id = message.chat.id
+            find_user = await redis.get(f"{user_chat_id}_phone")
+            if find_user:
+                find_user = json.loads(find_user)
+                # await redis.set(f"user:{user_chat_id}", find_user)
+            else:
+                find_user = None
+            #     await redis.set(f"user:{user_chat_id}", response_data)
+            # await redis.set(f"user:{user_chat_id}", response_data)
+            # if find_user is not None:
+            auth_data = {
+                "token": token,
+                "refresh_token": refreshToken
+            }
+            await redis.set(
+                f"auth:{user_chat_id}",
+                json.dumps(auth_data),
+                ex=60 * 60 * 24 * 365 * 5  # 5 yil
+            )
+            
+            share_button_ = await share_button(auth_key=auth_key, chat_id=user_chat_id)
             await message.answer(text, reply_markup=share_button_, parse_mode="HTML")  
-            await state.set_state(None)  
+            await state.set_state(None) 
 
     except ValueError:
         await message.answer("❌ Noto‘g‘ri sana formati. Iltimos, DD-MM-YYYY formatida kiriting (masalan: 28-08-2000).")
+
+# 3. Callback handlerda tokenlarni qayta yukla
+@dp.callback_query_handler(lambda c: c.data.startswith("submit:"))
+async def handle_submit(callback: types.CallbackQuery):
+    print('submit ishladi')
+    chat_id = callback.data.split(":")[1]
+
+    # 🔐 Bosgan user - asl usermi, tekshiramiz
+    if str(callback.from_user.id) != chat_id:
+        await callback.answer("⛔ Bu tugma sizga tegishli emas!", show_alert=True)
+        return
+    auth_data_raw = await redis.get(f"auth:{chat_id}")
+    if not auth_data_raw:
+        await callback.message.answer("⛔ Token topilmadi yoki muddati o‘tgan.")
+        return
+    auth_data = json.loads(auth_data_raw)
+    token = auth_data.get("token")
+    refresh_token = auth_data.get("refresh_token")
+    
+    await callback.message.answer(f"✅ Token bilan ishlashga tayyorman:\n\n🔑 {token}")
+
 
 
 @dp.callback_query_handler(lambda call: call.data.startswith("help_uz"), state="*")
@@ -639,7 +710,7 @@ async def edu_name_user(message: types.Message, state: FSMContext):
     refreshToken = data.get("refreshToken")
     token_ = data.get("token")
     file = message.document
-
+    auth_key = data.get("auth_key")
     # Telegram faylni olish
     file_info = await bot.get_file(file.file_id)
     file_path = file_info.file_path
@@ -673,7 +744,7 @@ async def edu_name_user(message: types.Message, state: FSMContext):
         "🎓 <b>Endi siz tanlagan universitetlarga hujjat topshirish imkoniyatiga egasiz.</b>\n\n"
         # "📄 <i>Iltimos, davom etish uchun kerakli bo‘limni tanlang.</i>"
     )
-    share_button_ = await share_button(token=token_, refresh_token=refreshToken)
+    share_button_ = await share_button(auth_key=auth_key, chat_id=message.from_user.id)
     # Foydalanuvchiga yuborish
     await message.answer(text, reply_markup=share_button_, parse_mode="HTML")
 
@@ -712,9 +783,10 @@ async def pinfl_user(message: types.Message, state: FSMContext):
     me_user, status_ = await me(token=token_)
     ic(me_user, status_)
     if status_ == 401:
-        await message.answer("❌ Parol noto'g'ri kiritilgan!")
+        await message.answer("❌ Parol noto'g'ri kiritilgan!", reply_markup=forget_password_button)
         return
     user_educations = me_user.get("user_educations")
+    auth_key = me_user.get("auth_key")
     ic(user_educations, type(user_educations))
     refreshToken = response.get("refreshToken")
     ic(530, token_,token,  refreshToken)
@@ -731,8 +803,10 @@ async def pinfl_user(message: types.Message, state: FSMContext):
         ic(530, token_, refreshToken)
         await state.update_data(token=token)
         await state.update_data(refreshToken=refreshToken)
+        
         if status_ == 401:
-            await message.answer("❌ Parol noto'g'ri kiritilgan!")
+            await message.answer()
+            await message.answer("❌ Parol noto'g'ri kiritilgan!", reply_markup=forget_password_button)
             return
         if first_name is None:
             await state.update_data(token=token_)
@@ -745,12 +819,67 @@ async def pinfl_user(message: types.Message, state: FSMContext):
                 "🎓 <b>Endi siz tanlagan universitetlarga hujjat topshirish imkoniyatiga egasiz.</b>\n\n"
                 # "📄 <i>Iltimos, davom etish uchun kerakli bo‘limni tanlang.</i>"
             )
-            share_button_ = await share_button(token=token_, refresh_token=refreshToken)
+            share_button_ = await share_button(auth_key=auth_key, chat_id=message.chat.id)
             # Foydalanuvchiga yuborish
             await message.answer(text, reply_markup=share_button_, parse_mode="HTML")
             await FullRegistration.next()
+import time
+
+# Global dict: user_id -> oxirgi forget_password bosgan vaqti (timestamp)
+user_last_forget_click: dict[int, float] = {}
+
+@dp.callback_query_handler(lambda call: call.data.startswith("forget_password"), state="*")
+async def forget_passwords(call: types.CallbackQuery, state: FSMContext):
+    user_id = call.from_user.id
+    now = time.time()
+    last_click = user_last_forget_click.get(user_id, 0)
+
+    # 120 sekund = 2 daqiqa
+    if now - last_click < 60:
+        remaining = int(60 - (now - last_click))
+        await call.answer(f"⏱ Kuting, {remaining} soniyadan keyin qayta urining.", show_alert=True)
+        return
+
+    # Vaqtni yangilaymiz
+    user_last_forget_click[user_id] = now
+
+    # Davom etish
+    data = await state.get_data()
+    phone = data.get("phone")
+
+    response_data, status = await change_password(phone=phone)
+    state_id = response_data.get("id")
+
+    await state.update_data(state_id=state_id)
+    await call.answer("📨 Raqamingizga yuborilgan tasdiqlash kodini kiriting.")
+    await FullRegistration.change_password.set()
 
 
+@dp.message_handler(state=FullRegistration.change_password)
+async def change_passwords(message: types.Message, state: FSMContext):
+    get_user_password6 = message.text.strip()
+    data = await state.get_data()
+    await state.update_data(get_user_password6=get_user_password6)
+    state_id = data.get("state_id")
+    data_reset, status_ = await user_verify_by_id(id=state_id, code=get_user_password6)
+    if status_ != 200 or status_ != 201:
+        ic(data_reset)
+        await message.answer("Yangi parolni yuboring, kamida 8ta belgidan iborat bo'lishi lozim.")
+        await FullRegistration.reset_password.set()
+
+@dp.message_handler(state=FullRegistration.reset_password)
+async def reset_passwords(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    state_id = data.get("state_id")
+    user_password_profile = message.text.strip()
+    phone = data.get("phone")
+    await state.update_data(user_password_profile=user_password_profile)
+    data_reset, status_ = await reset_password(id=state_id, password=user_password_profile, phone=phone)
+    if status_ == 200:
+        await message.answer("Parol muvaffaqiyatli o'zgartirildi.", reply_markup=restart_markup)
+        await FullRegistration.next()
+    else:
+        await message.answer("Parol o'zgartirishda muammo yuz berdi.")
 # @dp.message_handler(commands=['delete_user'], state='*')
 # async def delete(message: types.Message, state: FSMContext):
 #     await state.set_state(None)

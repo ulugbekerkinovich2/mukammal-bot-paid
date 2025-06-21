@@ -21,3 +21,8 @@ continue_button = ReplyKeyboardMarkup(
     ],
     resize_keyboard=True
 )
+
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+
+restart_markup = ReplyKeyboardMarkup(resize_keyboard=True)
+restart_markup.add(KeyboardButton("/start"))
