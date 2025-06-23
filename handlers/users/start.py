@@ -116,7 +116,7 @@ async def phone_number(message: types.Message, state: FSMContext):
     else:
         raw_text = message.text.strip()
         # if not re.fullmatch(r"9\d{8}", raw_text):
-        if not re.fullmatch(r"(9[0-9]|33|88|77)\d{7}", raw_text):
+        if not re.fullmatch(r"(50|9[0-9]|33|88|77)\d{7}", raw_text):
 
             await message.answer("❌ Noto‘g‘ri formatdagi raqam. Iltimos, faqat 9 ta raqam kiriting. Namuna: 901234567")
             return
@@ -700,7 +700,7 @@ async def back_to_region(call: types.CallbackQuery, state: FSMContext):
 async def university_name_user(message: types.Message, state: FSMContext):
     university_name = message.text.strip()
     await state.update_data(university_name=university_name)
-    await message.answer("📆 Tamomlagan yilingizni kiriting.\nNamuna: 2022")
+    await message.answer("📆 Ta'lim muassasasini tamomlagan yilingizni kiriting.\nNamuna: 2022")
     await FullRegistration.ended_year.set()
 
 @dp.message_handler(state=FullRegistration.ended_year)
@@ -710,32 +710,89 @@ async def ended_year_user(message: types.Message, state: FSMContext):
     await message.answer("Diplom faylini yuklang fayl formatda yuboring.\nFayl va rasmni telegram orqali yuborishda hajmini siqish funksiyasidan foydalanmasdan yuboring\n\nRuxsat etilgan formatlar: PDF, JPG, JPEG, PNG\nFayl hajmi 5mb dan katta bo'lmasligi kerak")
     await FullRegistration.diplom_file.set()
 
-@dp.message_handler(state=FullRegistration.diplom_file, content_types=types.ContentType.DOCUMENT)
+# @dp.message_handler(state=FullRegistration.diplom_file, content_types=[types.ContentType.DOCUMENT, types.ContentType.PHOTO])
+# async def edu_name_user(message: types.Message, state: FSMContext):
+#     data = await state.get_data()
+#     refreshToken = data.get("refreshToken")
+#     token_ = data.get("token")
+#     file = message.document
+#     auth_key = data.get("auth_key")
+#     # Telegram faylni olish
+#     file_info = await bot.get_file(file.file_id)
+#     file_path = file_info.file_path
+
+#     # Faylni vaqtinchalik yuklab olish
+#     local_path = f"/tmp/{file.file_name}"  # Linux/macOS uchun
+#     await bot.download_file(file_path, destination=local_path)
+
+#     # Faylni upload qilish
+#     response, status_ = await upload_file(token_, local_path)
+#     ic(493, response, status_)
+#     # Clean up: vaqtinchalik faylni o‘chirish
+#     if os.path.exists(local_path):
+#         os.remove(local_path)
+#     ic(response.get("path"), response['path'])
+#     # Statega yozish
+#     await state.update_data(diplom_file=response["path"])
+#     # await message.answer("📎 Diplom fayli yuklandi!")
+#     ic(data.get("diplom_file"), data)
+#     update_user_applicaition_form, status_ = await update_application_form(
+#         token=token_,
+#         district_id=data.get("district_id"),
+#         region_id=data.get("region_id"),
+#         institution_name=data.get("university_name"),
+#         graduation_year=data.get("ended_year"),
+#         file_path=response['path']
+#     )
+#     ic(update_user_applicaition_form, status_)
+#     text = (
+#         "✅ <b>Siz tizimga muvaffaqiyatli kirdingiz.</b>\n\n"
+#         "🎓 <b>Endi siz tanlagan universitetlarga hujjat topshirish imkoniyatiga egasiz.</b>\n\n"
+#         # "📄 <i>Iltimos, davom etish uchun kerakli bo‘limni tanlang.</i>"
+#     )
+#     share_button_ = await share_button(auth_key=auth_key, chat_id=message.from_user.id)
+#     # Foydalanuvchiga yuborish
+#     await message.answer(text, reply_markup=share_button_, parse_mode="HTML")
+
+#     await state.set_data(None)
+
+
+@dp.message_handler(state=FullRegistration.diplom_file, content_types=[types.ContentType.DOCUMENT, types.ContentType.PHOTO])
 async def edu_name_user(message: types.Message, state: FSMContext):
     data = await state.get_data()
     refreshToken = data.get("refreshToken")
     token_ = data.get("token")
-    file = message.document
     auth_key = data.get("auth_key")
+
     # Telegram faylni olish
-    file_info = await bot.get_file(file.file_id)
+    if message.document:
+        file_info = await bot.get_file(message.document.file_id)
+        file_name = message.document.file_name
+    elif message.photo:
+        photo = message.photo[-1]  # eng yuqori sifatli rasm
+        file_info = await bot.get_file(photo.file_id)
+        file_name = f"{photo.file_unique_id}.jpg"
+    else:
+        await message.answer("Fayl topilmadi.")
+        return
+
     file_path = file_info.file_path
+    local_path = f"/tmp/{file_name}"
 
     # Faylni vaqtinchalik yuklab olish
-    local_path = f"/tmp/{file.file_name}"  # Linux/macOS uchun
     await bot.download_file(file_path, destination=local_path)
 
     # Faylni upload qilish
     response, status_ = await upload_file(token_, local_path)
     ic(493, response, status_)
-    # Clean up: vaqtinchalik faylni o‘chirish
+
+    # Faylni o'chirish
     if os.path.exists(local_path):
         os.remove(local_path)
-    ic(response.get("path"), response['path'])
-    # Statega yozish
+
     await state.update_data(diplom_file=response["path"])
-    # await message.answer("📎 Diplom fayli yuklandi!")
-    ic(data.get("diplom_file"), data)
+    ic(response.get("path"), response['path'])
+
     update_user_applicaition_form, status_ = await update_application_form(
         token=token_,
         district_id=data.get("district_id"),
@@ -745,19 +802,16 @@ async def edu_name_user(message: types.Message, state: FSMContext):
         file_path=response['path']
     )
     ic(update_user_applicaition_form, status_)
+
     text = (
         "✅ <b>Siz tizimga muvaffaqiyatli kirdingiz.</b>\n\n"
         "🎓 <b>Endi siz tanlagan universitetlarga hujjat topshirish imkoniyatiga egasiz.</b>\n\n"
-        # "📄 <i>Iltimos, davom etish uchun kerakli bo‘limni tanlang.</i>"
     )
     share_button_ = await share_button(auth_key=auth_key, chat_id=message.from_user.id)
-    # Foydalanuvchiga yuborish
     await message.answer(text, reply_markup=share_button_, parse_mode="HTML")
 
     await state.set_data(None)
 
-
-    
 
 
 @dp.message_handler(state=Registration.login)
