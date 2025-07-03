@@ -1076,34 +1076,45 @@ async def handle_delete_confirmation(message: types.Message, state: FSMContext):
     
 @dp.message_handler(commands=['extract_data'], state='*')
 async def extract_data_handler(message: types.Message):
-    # Redisdan barcha user_state:USERID kalitlarini oling
     keys = await redis.keys("user_id:*")
     if not keys:
         await message.answer("Redisda hech qanday user data topilmadi.")
         return
 
-    # Har bir kalit uchun qiymatlarni oling
     data = []
     for key in keys:
-        key_str = key.decode("utf-8")  # bytes → str
+        key_str = key.decode("utf-8") if isinstance(key, bytes) else key
         user_id = key_str.split(":")[1]
-        state = await redis.get(key)
-        if isinstance(state, bytes):
-            state = state.decode("utf-8")
-        data.append({"user_id": user_id, "state": state})
 
+        val = await redis.get(key)
+        if isinstance(val, bytes):
+            val = val.decode("utf-8")
 
-    # DataFrame yaratish
+        # Har doim JSON deb och
+        val_json = {}
+        try:
+            val_json = json.loads(val)
+        except Exception:
+            pass  # fallback bo‘lsa bo‘sh dict
+
+        state = val_json.get("state", "")
+        username = val_json.get("username", "")
+        saved_at = val_json.get("saved_at", "")
+
+        data.append({
+            "user_id": user_id,
+            "username": username,
+            "state": state,
+            "saved_at": saved_at
+        })
+
     df = pd.DataFrame(data)
 
-    # Excel faylni xotirada yaratamiz
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df.to_excel(writer, index=False, sheet_name='UserStates')
 
     output.seek(0)
-
-    # Foydalanuvchiga yuborish uchun InputFile obyektiga aylantiramiz
     excel_file = InputFile(output, filename="user_states.xlsx")
 
-    await message.answer_document(excel_file, caption="Redisdan olingan user state ma'lumotlari.")
+    await message.answer_document(excel_file, caption="Tozalangan user state jadvali.")
