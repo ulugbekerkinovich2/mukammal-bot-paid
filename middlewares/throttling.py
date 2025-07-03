@@ -8,11 +8,14 @@ from aiogram.utils.exceptions import Throttled
 from aiogram.dispatcher import FSMContext
 
 from utils.my_redis import redis
+import json
+from datetime import datetime
 
-async def save_user_state(user_id: int, state: str):
+async def save_user_state(user_id: int, state: str, username: str = None, saved_at: str = None):
     key = f"user_id:{user_id}"
-    print(14, key)
-    await redis.set(key, state, ex=60*60*24*365)
+    timestamp = datetime.utcnow().isoformat()
+    value = json.dumps({"state": state, "saved_at": saved_at, "username":username })
+    await redis.set(key, value, ex=60*60*24*365)
 
 class StateSaverMiddleware(BaseMiddleware):
     async def on_process_message(self, message: types.Message, data: dict):

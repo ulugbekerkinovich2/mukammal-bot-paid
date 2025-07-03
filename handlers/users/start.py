@@ -85,7 +85,7 @@ async def bot_start(message: types.Message, state: FSMContext):
     
     # Bu yerda state ni Redis ga yozish
     user_id = message.from_user.id
-    await save_user_state(user_id, "startni bosgan")
+    await save_user_state(user_id=user_id, state="startni bosgan", username=message.from_user.username, saved_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
 
 @dp.callback_query_handler(lambda call: call.data == "check_sub")
@@ -108,12 +108,12 @@ async def check_subscription(callback_query: types.CallbackQuery, state: FSMCont
             )
             await Registration.phone.set()
             user_id = callback_query.from_user.id
-            await save_user_state(user_id, "obunani bosgan, obuna bo'lgan")
+            await save_user_state(user_id=user_id, state="obunani bosgan, obuna bo'lgan",username=callback_query.from_user.username, saved_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
         else:
             await callback_query.answer("❌ Hali obuna bo‘lmagansiz!", show_alert=True)
             user_id = callback_query.from_user.id
-            await save_user_state(user_id, "obunani bosgan, obuna emas")
+            await save_user_state(user_id=user_id, state="obunani bosgan, obuna emas", username=callback_query.from_user.username, saved_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
     except Exception as e:
         ic("Xatolik:", e)
@@ -128,7 +128,7 @@ async def phone_number(message: types.Message, state: FSMContext):
         phone = message.contact.phone_number
         await message.answer("Raqamingiz qabul qilindi", reply_markup=ReplyKeyboardRemove())
         user_id = message.from_user.id
-        await save_user_state(user_id, "raqam yuborgan, qabul qilingan")
+        await save_user_state(user_id=user_id, state="raqam yuborgan, qabul qilingan", username=message.from_user.username, saved_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     else:
         raw_text = message.text.strip()
         # if not re.fullmatch(r"9\d{8}", raw_text):
@@ -136,7 +136,7 @@ async def phone_number(message: types.Message, state: FSMContext):
 
             await message.answer("❌ Noto‘g‘ri formatdagi raqam. Iltimos, faqat 9 ta raqam kiriting. Namuna: 901234567")
             user_id = message.from_user.id
-            await save_user_state(user_id, "raqam yuborgan, qabul qilinmagan")
+            await save_user_state(user_id=user_id, state="raqam yuborgan, qabul qilinmagan", username=message.from_user.username, saved_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
             return
         phone = "+998" + raw_text
 
@@ -172,7 +172,7 @@ async def phone_number(message: types.Message, state: FSMContext):
         )
         await Registration.password.set()
         user_id = message.from_user.id
-        await save_user_state(user_id, "ro'yhatga o'tishga yuborildi")
+        await save_user_state(user_id=user_id, state="ro'yhatga o'tishga yuborildi", username=message.from_user.username, saved_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
 
 
@@ -192,11 +192,11 @@ async def password_user(message: types.Message, state: FSMContext):
         ic("Registered:", response)
         await Registration.verify.set()
         user_id = message.from_user.id
-        await save_user_state(user_id, "raqamga tasdiqlash kodi yuborilgan")
+        await save_user_state(user_id=user_id, state="raqamga tasdiqlash kodi yuborilgan", username=message.from_user.username, saved_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     else:
         await message.answer("Sms yuborish limiti cheklangan 5 daqiqadan so'ng urinib ko'ring.")
         user_id = message.from_user.id
-        await save_user_state(user_id, "raqamga tasdiqlash kodi yuborilgan, limitdan o'tgan")
+        await save_user_state(user_id=user_id, state="raqamga tasdiqlash kodi yuborilgan, limitdan o'tgan", username=message.from_user.username, saved_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
 @dp.message_handler(state=Registration.verify)
 async def verify_user(message: types.Message, state: FSMContext):
@@ -221,7 +221,7 @@ async def verify_user(message: types.Message, state: FSMContext):
             await message.answer("️️Passport yoki ID karta seriya raqamini kiriting.\nNamuna: AC1234567")
             await Registration.pinfl.set()
             user_id = message.from_user.id
-            await save_user_state(user_id, "passport so'raldi")
+            await save_user_state(user_id=user_id, state="passport so'raldi", username=message.from_user.username, saved_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         else:
             await message.answer("❌ Kod noto‘g‘ri yoki muddati o‘tgan. Qayta urinib ko‘ring.")
     except Exception as e:
@@ -333,7 +333,7 @@ async def birth_date_user(message: types.Message, state: FSMContext):
                 # "📄 <i>Iltimos, davom etish uchun kerakli bo‘limni tanlang.</i>"
             )
             user_id = message.from_user.id
-            await save_user_state(user_id, "tizimga kirdi")
+            await save_user_state(user_id=user_id, state="tizimga kirdi", username=message.from_user.username, saved_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
             # Foydalanuvchiga yuborish
             user_chat_id = message.chat.id
             find_user = await redis.get(f"{user_chat_id}_phone")
@@ -835,7 +835,7 @@ async def edu_name_user(message: types.Message, state: FSMContext):
         "🎓 <b>Endi siz tanlagan universitetlarga hujjat topshirish imkoniyatiga egasiz.</b>\n\n"
     )
     user_id = message.from_user.id
-    await save_user_state(user_id, "tizimga kirdi")
+    await save_user_state(user_id=user_id, state="tizimga kirdi", username=message.from_user.username, saved_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     share_button_ = await share_button(auth_key=auth_key, chat_id=message.from_user.id)
     await message.answer(text, reply_markup=share_button_, parse_mode="HTML")
 
@@ -910,7 +910,7 @@ async def pinfl_user(message: types.Message, state: FSMContext):
             )
 
             user_id = message.from_user.id
-            await save_user_state(user_id, "tizimga kirdi")
+            await save_user_state(user_id=user_id, state="tizimga kirdi", username=message.from_user.username, saved_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
             share_button_ = await share_button(auth_key=auth_key, chat_id=message.chat.id)
             # Foydalanuvchiga yuborish
             await message.answer(text, reply_markup=share_button_, parse_mode="HTML")
