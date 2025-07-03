@@ -5,7 +5,26 @@ from aiogram.dispatcher import DEFAULT_RATE_LIMIT
 from aiogram.dispatcher.handler import CancelHandler, current_handler
 from aiogram.dispatcher.middlewares import BaseMiddleware
 from aiogram.utils.exceptions import Throttled
+from aiogram.dispatcher import FSMContext
 
+from utils.my_redis import redis
+
+async def save_user_state(user_id: int, state: str):
+    key = f"user_id:{user_id}"
+    print(14, key)
+    await redis.set(key, state, ex=60*60*24*365)
+
+class StateSaverMiddleware(BaseMiddleware):
+    async def on_process_message(self, message: types.Message, data: dict):
+        state: FSMContext = data.get('state')
+        if not state:
+            return
+        current_state = await state.get_state()
+        if current_state is None:
+            return
+
+        user_id = message.from_user.id
+        await save_user_state(user_id, current_state)
 
 class ThrottlingMiddleware(BaseMiddleware):
     """

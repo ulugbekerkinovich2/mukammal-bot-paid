@@ -18,10 +18,16 @@ from states.userStates import Registration, FullRegistration, DeleteUser
 from utils.my_redis import redis
 import json
 from utils.send_req import get_user, add_chat_id, change_password, reset_password, user_verify_by_id
-
+from middlewares.throttling import save_user_state
 from redis.asyncio import Redis
 from aiogram import types
 from aiogram.dispatcher import FSMContext
+import pandas as pd
+from aiogram.types import InputFile
+import io
+from utils.my_redis import redis
+# redis_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+
 # from loader import dp, redis  # siz allaqachon redis = Redis(...) deb yozgansiz
 
 @dp.message_handler(CommandStart(), state="*")
@@ -76,6 +82,10 @@ async def bot_start(message: types.Message, state: FSMContext):
         parse_mode="HTML"
     )
     await Registration.phone.set()
+    
+    # Bu yerda state ni Redis ga yozish
+    user_id = message.from_user.id
+    await save_user_state(user_id, "startni bosgan")
 
 
 @dp.callback_query_handler(lambda call: call.data == "check_sub")
@@ -97,9 +107,13 @@ async def check_subscription(callback_query: types.CallbackQuery, state: FSMCont
                 parse_mode="HTML"
             )
             await Registration.phone.set()
+            user_id = callback_query.from_user.id
+            await save_user_state(user_id, "obunani bosgan, obuna bo'lgan")
 
         else:
             await callback_query.answer("❌ Hali obuna bo‘lmagansiz!", show_alert=True)
+            user_id = callback_query.from_user.id
+            await save_user_state(user_id, "obunani bosgan, obuna emas")
 
     except Exception as e:
         ic("Xatolik:", e)
@@ -113,12 +127,16 @@ async def phone_number(message: types.Message, state: FSMContext):
     if message.content_type == ContentType.CONTACT:
         phone = message.contact.phone_number
         await message.answer("Raqamingiz qabul qilindi", reply_markup=ReplyKeyboardRemove())
+        user_id = message.from_user.id
+        await save_user_state(user_id, "raqam yuborgan, qabul qilingan")
     else:
         raw_text = message.text.strip()
         # if not re.fullmatch(r"9\d{8}", raw_text):
         if not re.fullmatch(r"(50|9[0-9]|33|88|77)\d{7}", raw_text):
 
             await message.answer("❌ Noto‘g‘ri formatdagi raqam. Iltimos, faqat 9 ta raqam kiriting. Namuna: 901234567")
+            user_id = message.from_user.id
+            await save_user_state(user_id, "raqam yuborgan, qabul qilinmagan")
             return
         phone = "+998" + raw_text
 
@@ -153,6 +171,8 @@ async def phone_number(message: types.Message, state: FSMContext):
             reply_markup=ReplyKeyboardRemove()
         )
         await Registration.password.set()
+        user_id = message.from_user.id
+        await save_user_state(user_id, "ro'yhatga o'tishga yuborildi")
 
 
 
@@ -171,8 +191,12 @@ async def password_user(message: types.Message, state: FSMContext):
         await message.answer("Raqamingizga yuborilgan tasdiqlash kodini kiriting.")
         ic("Registered:", response)
         await Registration.verify.set()
+        user_id = message.from_user.id
+        await save_user_state(user_id, "raqamga tasdiqlash kodi yuborilgan")
     else:
         await message.answer("Sms yuborish limiti cheklangan 5 daqiqadan so'ng urinib ko'ring.")
+        user_id = message.from_user.id
+        await save_user_state(user_id, "raqamga tasdiqlash kodi yuborilgan, limitdan o'tgan")
 
 @dp.message_handler(state=Registration.verify)
 async def verify_user(message: types.Message, state: FSMContext):
@@ -196,6 +220,8 @@ async def verify_user(message: types.Message, state: FSMContext):
         if status_ == 201:
             await message.answer("️️Passport yoki ID karta seriya raqamini kiriting.\nNamuna: AC1234567")
             await Registration.pinfl.set()
+            user_id = message.from_user.id
+            await save_user_state(user_id, "passport so'raldi")
         else:
             await message.answer("❌ Kod noto‘g‘ri yoki muddati o‘tgan. Qayta urinib ko‘ring.")
     except Exception as e:
@@ -306,6 +332,8 @@ async def birth_date_user(message: types.Message, state: FSMContext):
                 "🎓 <b>Endi siz tanlagan universitetlarga hujjat topshirish imkoniyatiga egasiz.</b>\n\n"
                 # "📄 <i>Iltimos, davom etish uchun kerakli bo‘limni tanlang.</i>"
             )
+            user_id = message.from_user.id
+            await save_user_state(user_id, "tizimga kirdi")
             # Foydalanuvchiga yuborish
             user_chat_id = message.chat.id
             find_user = await redis.get(f"{user_chat_id}_phone")
@@ -499,7 +527,6 @@ async def passport_image2_user(message: types.Message, state: FSMContext):
     await state.update_data(passport_image2=response.get("url"))  # yoki image_id
     await message.answer("Qo'shimcha telefon raqamingizni kiriting.\nNamuna: +998991234567")
     await FullRegistration.extra_phone.set()
-
 @dp.message_handler(state=FullRegistration.extra_phone)
 async def extra_phone_user(message: types.Message, state: FSMContext):
     data = await state.get_data()
@@ -807,6 +834,8 @@ async def edu_name_user(message: types.Message, state: FSMContext):
         "✅ <b>Siz tizimga muvaffaqiyatli kirdingiz.</b>\n\n"
         "🎓 <b>Endi siz tanlagan universitetlarga hujjat topshirish imkoniyatiga egasiz.</b>\n\n"
     )
+    user_id = message.from_user.id
+    await save_user_state(user_id, "tizimga kirdi")
     share_button_ = await share_button(auth_key=auth_key, chat_id=message.from_user.id)
     await message.answer(text, reply_markup=share_button_, parse_mode="HTML")
 
@@ -879,6 +908,9 @@ async def pinfl_user(message: types.Message, state: FSMContext):
                 "🎓 <b>Endi siz tanlagan universitetlarga hujjat topshirish imkoniyatiga egasiz.</b>\n\n"
                 # "📄 <i>Iltimos, davom etish uchun kerakli bo‘limni tanlang.</i>"
             )
+
+            user_id = message.from_user.id
+            await save_user_state(user_id, "tizimga kirdi")
             share_button_ = await share_button(auth_key=auth_key, chat_id=message.chat.id)
             # Foydalanuvchiga yuborish
             await message.answer(text, reply_markup=share_button_, parse_mode="HTML")
@@ -1040,3 +1072,38 @@ async def handle_delete_confirmation(message: types.Message, state: FSMContext):
         return  # noto‘g‘ri javobda qayta kutadi
 
     await state.finish()
+
+    
+@dp.message_handler(commands=['extract_data'], state='*')
+async def extract_data_handler(message: types.Message):
+    # Redisdan barcha user_state:USERID kalitlarini oling
+    keys = await redis.keys("user_id:*")
+    if not keys:
+        await message.answer("Redisda hech qanday user data topilmadi.")
+        return
+
+    # Har bir kalit uchun qiymatlarni oling
+    data = []
+    for key in keys:
+        key_str = key.decode("utf-8")  # bytes → str
+        user_id = key_str.split(":")[1]
+        state = await redis.get(key)
+        if isinstance(state, bytes):
+            state = state.decode("utf-8")
+        data.append({"user_id": user_id, "state": state})
+
+
+    # DataFrame yaratish
+    df = pd.DataFrame(data)
+
+    # Excel faylni xotirada yaratamiz
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name='UserStates')
+
+    output.seek(0)
+
+    # Foydalanuvchiga yuborish uchun InputFile obyektiga aylantiramiz
+    excel_file = InputFile(output, filename="user_states.xlsx")
+
+    await message.answer_document(excel_file, caption="Redisdan olingan user state ma'lumotlari.")
