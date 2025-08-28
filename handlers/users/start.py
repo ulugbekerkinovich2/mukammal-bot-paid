@@ -2,7 +2,7 @@ from aiogram import types
 from aiogram.dispatcher.filters.builtin import CommandStart
 from aiogram.dispatcher import FSMContext
 from loader import dp, bot
-from keyboards.default.userKeyboard import keyboard_user, strong_pass, continue_button, restart_markup
+from keyboards.default.userKeyboard import keyboard_user, strong_pass, continue_button, restart_markup, adminKeyboard_user
 from aiogram.types import ContentType
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import re
@@ -12,7 +12,7 @@ upload_file, me, update_application_form
 from aiogram.types import ReplyKeyboardRemove
 from datetime import datetime
 from keyboards.inline.user_inline import share_button, gender_button, help_button, forget_password_button
-from data.config import CHANNEL_ID
+from data.config import CHANNEL_ID, ADMINS
 from icecream import ic
 from states.userStates import Registration, FullRegistration, DeleteUser
 from utils.my_redis import redis
@@ -34,6 +34,7 @@ from utils.my_redis import redis
 async def bot_start(message: types.Message, state: FSMContext):
     await state.finish()
     user_id = message.from_user.id
+
     data = await state.get_data()
     get_user_id = await get_user(user_id, 5)
     if get_user_id is not None:
@@ -72,16 +73,28 @@ async def bot_start(message: types.Message, state: FSMContext):
         except Exception as e:
             await message.answer("⚠️ Tekshiruvda xatolik. Keyinroq urinib ko‘ring.")
             return
+    
+    # from keyboards.default.userKeyboard import keyboard_user
+    if str(user_id) in ADMINS:
+        keyboard = adminKeyboard_user
+    else:
+        keyboard = keyboard_user
 
-    # Agar obuna bo‘lgan bo‘lsa (yoki allaqachon tekshirilgan bo‘lsa)
+    # Xush kelibsiz xabari
     await message.answer(
         "🎓 <b>Mentalaba botiga xush kelibsiz!</b>\n\n"
         "📲 <b>Tizimga kirish uchun telefon raqamingizni yuboring.</b>\n"
-        "Iltimos, raqamni <u>faqat 9 ta raqam bilan</u> kiriting (masalan: <code>901234567</code>).",
-        reply_markup=keyboard_user,
+        "Iltimos, raqamni <u>faqat 9 ta raqam bilan</u> kiriting "
+        "(masalan: <code>901234567</code>).",
+        reply_markup=keyboard,
         parse_mode="HTML"
     )
-    await Registration.phone.set()
+
+    # Faqat oddiy userlarga state berish
+    if str(user_id) not in ADMINS:
+        await Registration.phone.set()
+    
+    
     
     # Bu yerda state ni Redis ga yozish
     user_id = message.from_user.id
@@ -395,7 +408,6 @@ async def rewrite(call: types.CallbackQuery, state: FSMContext):
     await bot_start(call.message, state)
 
 
-import os
 
 @dp.message_handler(state=FullRegistration.profile_image, content_types=types.ContentTypes.PHOTO | types.ContentTypes.DOCUMENT)
 async def profile_image_user(message: types.Message, state: FSMContext):

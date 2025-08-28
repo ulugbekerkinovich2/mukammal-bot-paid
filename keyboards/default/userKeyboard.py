@@ -8,6 +8,14 @@ keyboard_user = ReplyKeyboardMarkup(
 
 )
 
+adminKeyboard_user = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton("📊 Admin Panel")],
+        [KeyboardButton("📞Raqamni yuborish", request_contact=True)]
+    ],
+    resize_keyboard=True
+)
+
 strong_pass = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton("🔑 Kuchli parol yaratish")]

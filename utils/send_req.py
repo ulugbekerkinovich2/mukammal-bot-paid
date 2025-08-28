@@ -354,3 +354,79 @@ async def reset_password(id, password, phone):
         async with session.post(url, json=payload, headers=headers) as response:
             status_ = response.status
             return await response.json(), status_
+        
+
+
+def get_all_bots():
+    url = "https://ads.misterdev.uz/bots/get"
+    response = requests.get(url)
+    return response.json()
+
+def get_all_users():
+    # url = "https://ads.misterdev.uz/users/get"
+    # response = requests.get(url)
+    response = [
+    {
+        "id": 30927,
+        "firstname": "Ulugbek",
+        "lastname": "Erkinov",
+        "chat_id": "935920479",
+        "username": "@status_developer",
+        "created_at": None,
+        "status": "active",
+        "bot_id": 6
+    },
+        {
+        "id": 30927,
+        "firstname": "Ulugbek",
+        "lastname": "Erkinov",
+        "chat_id": "935920479",
+        "username": "@status_developer",
+        "created_at": None,
+        "status": "active",
+        "bot_id": 6
+    },
+        {
+        "id": 30927,
+        "firstname": "Ulugbek",
+        "lastname": "Erkinov",
+        "chat_id": "935920479",
+        "username": "@status_developer",
+        "created_at": None,
+        "status": "active",
+        "bot_id": 6
+    },    {
+        "id": 30927,
+        "firstname": "Ulugbek",
+        "lastname": "Erkinov",
+        "chat_id": "935920479",
+        "username": "@status_developer",
+        "created_at": None,
+        "status": "active",
+        "bot_id": 6
+    },    {
+        "id": 30927,
+        "firstname": "Ulugbek",
+        "lastname": "Erkinov",
+        "chat_id": "935920479",
+        "username": "@status_developer",
+        "created_at": None,
+        "status": "active",
+        "bot_id": 6
+    },    {
+        "id": 30927,
+        "firstname": "Ulugbek",
+        "lastname": "Erkinov",
+        "chat_id": "935920479",
+        "username": "@status_developer",
+        "created_at": None,
+        "status": "active",
+        "bot_id": 6
+    }
+    ]
+    return response
+    # return response.json()
+
+# data__ = get_all_users()
+# with open('user_bot.json', 'w', encoding='utf-8') as f:
+#     json.dump(data__, f, ensure_ascii=False, indent=4)
