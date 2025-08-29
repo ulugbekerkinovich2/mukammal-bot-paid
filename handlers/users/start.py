@@ -3,10 +3,11 @@ from aiogram.dispatcher.filters.builtin import CommandStart
 from aiogram.dispatcher import FSMContext
 from loader import dp, bot
 from keyboards.default.userKeyboard import keyboard_user, strong_pass, continue_button, restart_markup, adminKeyboard_user
-from aiogram.types import ContentType
+import aiogram.types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import re
 from states.userStates import Registration
+import utils
 from utils.send_req import auth_check, user_register, user_verify, user_info, user_login, delete_user, upload_image, fetch_regions, district_locations, fetch_educations,\
 upload_file, me, update_application_form
 from aiogram.types import ReplyKeyboardRemove
@@ -17,7 +18,7 @@ from icecream import ic
 from states.userStates import Registration, FullRegistration, DeleteUser
 from utils.my_redis import redis
 import json
-from utils.send_req import get_user, add_chat_id, change_password, reset_password, user_verify_by_id
+from utils.send_req import get_user, add_chat_id, change_password, reset_password, user_verify_by_id, save_chat_id
 from middlewares.throttling import save_user_state
 from redis.asyncio import Redis
 from aiogram import types
@@ -26,6 +27,8 @@ import pandas as pd
 from aiogram.types import InputFile
 import io
 from utils.my_redis import redis
+from aiogram.types import ContentType
+
 # redis_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
 
 # from loader import dp, redis  # siz allaqachon redis = Redis(...) deb yozgansiz
@@ -34,23 +37,32 @@ from utils.my_redis import redis
 async def bot_start(message: types.Message, state: FSMContext):
     await state.finish()
     user_id = message.from_user.id
-
     data = await state.get_data()
-    get_user_id = await get_user(user_id, 5)
-    if get_user_id is not None:
-        if get_user_id['id'] is not None:
-            print(get_user_id['id'])
-    else:
-        create_user = await add_chat_id(
+    # user 5 ga tekshir
+    get_user_id_5 = await get_user(user_id, 5)
+    if get_user_id_5 is None:
+        await add_chat_id(
             chat_id_user=user_id,
-            first_name_user=message.from_user.first_name if message.from_user.first_name is not None else "not found",
-            last_name_user=message.from_user.last_name if message.from_user.last_name is not None else "not found",
-            pin=message.from_user.username if message.from_user.username is not None else "not found",
+            first_name_user=message.from_user.first_name or "not found",
+            last_name_user=message.from_user.last_name or "not found",
+            pin=message.from_user.username or "not found",
             phone="1",
-            username=message.from_user.username if message.from_user.username is not None else "not found",
+            username=message.from_user.username or "not found",
             date=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         )
-        print(create_user)
+
+    # user 7 ga tekshir
+    get_user_id_7 = await get_user(user_id, 7)
+    if get_user_id_7 is None:
+        ads = save_chat_id(
+            chat_id=user_id,
+            firstname=message.from_user.first_name or "not found",
+            lastname=message.from_user.last_name or "not found",
+            bot_id=7,
+            username=message.from_user.username or "not found",
+            status="active"
+        )
+        print(ads)
 
     # Avval tekshirilgan bo‘lsa qayta so‘ralmasin
     if not data.get("subscription_checked"):
@@ -89,11 +101,11 @@ async def bot_start(message: types.Message, state: FSMContext):
         reply_markup=keyboard,
         parse_mode="HTML"
     )
-
+    # ic(user_id, type(user_id), ADMINS)
     # Faqat oddiy userlarga state berish
     if str(user_id) not in ADMINS:
         await Registration.phone.set()
-    
+
     
     
     # Bu yerda state ni Redis ga yozish

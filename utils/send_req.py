@@ -2,6 +2,7 @@ import aiohttp
 from data.config import main_url
 from icecream import ic
 import requests
+import json
 async def auth_check(phone):
     url = f"{main_url}/v1/auth/check"
     payload = {
@@ -363,70 +364,87 @@ def get_all_bots():
     return response.json()
 
 def get_all_users():
-    # url = "https://ads.misterdev.uz/users/get"
-    # response = requests.get(url)
-    response = [
-    {
-        "id": 30927,
-        "firstname": "Ulugbek",
-        "lastname": "Erkinov",
-        "chat_id": "935920479",
-        "username": "@status_developer",
-        "created_at": None,
-        "status": "active",
-        "bot_id": 6
-    },
-        {
-        "id": 30927,
-        "firstname": "Ulugbek",
-        "lastname": "Erkinov",
-        "chat_id": "935920479",
-        "username": "@status_developer",
-        "created_at": None,
-        "status": "active",
-        "bot_id": 6
-    },
-        {
-        "id": 30927,
-        "firstname": "Ulugbek",
-        "lastname": "Erkinov",
-        "chat_id": "935920479",
-        "username": "@status_developer",
-        "created_at": None,
-        "status": "active",
-        "bot_id": 6
-    },    {
-        "id": 30927,
-        "firstname": "Ulugbek",
-        "lastname": "Erkinov",
-        "chat_id": "935920479",
-        "username": "@status_developer",
-        "created_at": None,
-        "status": "active",
-        "bot_id": 6
-    },    {
-        "id": 30927,
-        "firstname": "Ulugbek",
-        "lastname": "Erkinov",
-        "chat_id": "935920479",
-        "username": "@status_developer",
-        "created_at": None,
-        "status": "active",
-        "bot_id": 6
-    },    {
-        "id": 30927,
-        "firstname": "Ulugbek",
-        "lastname": "Erkinov",
-        "chat_id": "935920479",
-        "username": "@status_developer",
-        "created_at": None,
-        "status": "active",
-        "bot_id": 6
-    }
-    ]
-    return response
-    # return response.json()
+    url = "https://ads.misterdev.uz/users/get"
+    response = requests.get(url)
+    data = [i for i in response.json() if i['bot_id'] == 7 or i['bot_id'] == "7"]
+    # response = [
+    # {
+    #     "id": 30927,
+    #     "firstname": "Ulugbek",
+    #     "lastname": "Erkinov",
+    #     "chat_id": "935920479",
+    #     "username": "@status_developer",
+    #     "created_at": None,
+    #     "status": "active",
+    #     "bot_id": 7
+    # },
+    # {
+    #     "id": 30298,
+    #     "firstname": "user",
+    #     "lastname": "not found",
+    #     "chat_id": "5204054835",
+    #     "username": "not found",
+    #     "created_at": "2025-08-29 14:42:38.470762+05",
+    #     "status": "active",
+    #     "bot_id": 7
+    # }
+    # ]
+    # return response
+    return data
 
-# data__ = get_all_users()
-# with open('user_bot.json', 'w', encoding='utf-8') as f:
-#     json.dump(data__, f, ensure_ascii=False, indent=4)
+def update_user(id, chat_id,firstname, lastname,bot_id,username,status,created_at):
+    url = f"https://ads.misterdev.uz/users/put/{id}"
+    data = {
+        "chat_id": chat_id,
+        "firstname": firstname if firstname else "firstname not found",
+        "lastname": lastname if lastname else "lastname not found",
+        "bot_id": bot_id,
+        "username": username if username else "username not found",
+        "status": status,
+        'created_at': created_at
+        }
+    ic("update",data)
+    response = requests.put(url, json=data)
+    return response.json()
+
+def save_chat_id(chat_id,firstname, lastname,bot_id,username,status):
+    url = "https://ads.misterdev.uz/users/post"
+    data = {
+        "chat_id": chat_id,
+        "firstname": firstname if firstname else "firstname not found",
+        "lastname": lastname if lastname else "lastname not found",
+        "bot_id": bot_id,
+        "username": username if username else "username not found",
+        "status": status
+        }
+    ic(data)
+    response = requests.post(url, json=data)
+    
+    return response.json()
+
+import psycopg2
+from dotenv import load_dotenv
+import os
+load_dotenv()
+def update_user_status(chat_id, bot_id, status="blocked"):
+    conn = psycopg2.connect(
+        host=os.getenv("db_host"),
+        database=os.getenv("db_name"),
+        user=os.getenv("db_user"),
+        password=os.getenv("db_pass"),
+        port=os.getenv("db_port")
+    )
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE users
+                    SET status = %s
+                    WHERE chat_id = %s AND bot_id_id = %s
+                    """,
+                    (status, chat_id, bot_id)
+                )
+                return cur.rowcount  # necha qator update qilinganini qaytaradi
+    finally:
+        conn.close()

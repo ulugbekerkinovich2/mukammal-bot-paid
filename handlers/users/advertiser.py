@@ -91,11 +91,15 @@ async def send_post_to_users(callback_query: types.CallbackQuery, state: FSMCont
                 message_id=post_id
             )
             count += 1
+            # updated = send_req.update_user(user['id'], user['chat_id'],user['firstname'], user['lastname'],user['bot_id'],user['username'],"active",user['created_at'])
+            send_req.update_user_status(user['chat_id'], user['bot_id'], "active")
             ic(f"User {user['chat_id']} ga yuborildi")
         except Exception as e:
             failed += 1
+            ic(user)
+            send_req.update_user_status(user['chat_id'], user['bot_id'], "blocked")
+            # updated = send_req.update_user(user['id'], user['chat_id'],user['firstname'], user['lastname'],user['bot_id'],user['username'],"blocked",user['created_at'])
             print(f"User {user['chat_id']} ga yuborilmadi: {e}")
-
         # har 100 tadan keyin 1 sekund kutish
         if idx % 100 == 0:
             await asyncio.sleep(1)
