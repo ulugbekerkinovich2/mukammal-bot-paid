@@ -228,7 +228,7 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
     first_subject_id=data["first_subject_id"]
     second_subject_id=data["second_subject_id"]
     chat_id = call.from_user.id
-    register(
+    data = register(
         bot_id=chat_id,
         full_name=full_name,
         phone=phone,
@@ -236,5 +236,6 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
         first_subject_id=first_subject_id,
         second_subject_id=second_subject_id,
     )
+    print(data)
     await call.message.answer("✅ Ro‘yxatdan o‘tdingiz!")
     await state.finish()
