@@ -21,6 +21,8 @@ Pygments==2.19.2
 python-dotenv==1.2.1
 pytz==2025.2
 redis==7.1.0
+requests==2.32.5
 typing_extensions==4.15.0
+urllib3==2.6.2
 xlsxwriter==3.2.9
 yarl==1.22.0
