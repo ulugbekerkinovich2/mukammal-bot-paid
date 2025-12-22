@@ -10,34 +10,25 @@ ADMINS = env.list("ADMINS")  # adminlar ro'yxati
 IP = env.str("ip")  # Xosting ip manzili
 # main_url = env.str("base_url")
 # CHANNEL_ID = env.str('CHANNEL_ID')
-
 SUBJECTS_MAP = {
-    "Fizika": {
-        "id": 100,
-        "ru": "Физика",
-        "relative": {
-            "uz": ["Matematika", "Ingliz tili"],
-            "ru": ["Математика", "Английский язык"],
-        },
-    },
-    "Tarix": {
-        "id": 101,
-        "ru": "История",
-        "relative": {
-            "uz": ["Matematika", "Geografiya", "Ingliz tili", "Ona tili va adabiyot"],
-            "ru": ["Математика", "География", "Английский язык", "Родной язык и литература"],
-        },
-    },
     "Matematika": {
-        "id": 102,
+        "id": 20,
         "ru": "Математика",
         "relative": {
             "uz": ["Fizika", "Geografiya", "Ingliz tili", "Ona tili va adabiyot"],
             "ru": ["Физика", "География", "Английский язык", "Родной язык и литература"],
         },
     },
+    "Fizika": {
+        "id": 24,
+        "ru": "Физика",
+        "relative": {
+            "uz": ["Matematika", "Ingliz tili"],
+            "ru": ["Математика", "Английский язык"],
+        },
+    },
     "Geografiya": {
-        "id": 103,
+        "id": 25,
         "ru": "География",
         "relative": {
             "uz": ["Matematika"],
@@ -45,35 +36,43 @@ SUBJECTS_MAP = {
         },
     },
     "Ingliz tili": {
-        "id": 104,
+        "id": 23,
         "ru": "Английский язык",
         "relative": {
-            "uz": ["Ona tili va adabiyot"],
-            "ru": ["Родной язык и литература"],
+            "uz": ["Matematika", "Ona tili va adabiyot"],
+            "ru": ["Математика", "Родной язык и литература"],
         },
     },
     "Ona tili va adabiyot": {
-        "id": 105,
+        "id": 27,
         "ru": "Родной язык и литература",
         "relative": {
-            "uz": ["Matematika", "Ingliz tili"],
-            "ru": ["Математика", "Английский язык"],
+            "uz": ["Matematika", "Ingliz tili", "Biologiya"],
+            "ru": ["Математика", "Английский язык", "Биология"],
+        },
+    },
+    "Tarix": {
+        "id": 26,
+        "ru": "История",
+        "relative": {
+            "uz": ["Matematika", "Geografiya", "Ingliz tili", "Ona tili va adabiyot"],
+            "ru": ["Математика", "География", "Английский язык", "Родной язык и литература"],
         },
     },
     "Biologiya": {
-        "id": 106,
+        "id": 6,
         "ru": "Биология",
         "relative": {
-            "uz": ["Ona tili va adabiyot", "Kimyo"],
-            "ru": ["Родной язык и литература", "Химия"],
+            "uz": ["Kimyo", "Ona tili va adabiyot"],
+            "ru": ["Химия", "Родной язык и литература"],
         },
     },
     "Kimyo": {
-        "id": 107,
+        "id": 7,
         "ru": "Химия",
         "relative": {
-            "uz": ["Matematika", "Biologiya"],
-            "ru": ["Математика", "Биология"],
+            "uz": ["Biologiya", "Matematika"],
+            "ru": ["Биология", "Математика"],
         },
     },
 }

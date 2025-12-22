@@ -1,6 +1,6 @@
 import requests
 from typing import Dict, Any
-
+import random
 MAIN_URL = "https://dtm-api.misterdev.uz/api/v1/auth/register"
 
 session = requests.Session()
@@ -10,6 +10,10 @@ session.headers.update({
 })
 
 
+class RegisterError(Exception):
+    pass
+random_number = random.randint(1000000, 9999999)
+
 def register(
     bot_id: str,
     full_name: str,
@@ -17,41 +21,37 @@ def register(
     school_code: str,
     first_subject_id: int,
     second_subject_id: int,
-    timeout: int = 10,
+    password: str,
+    timeout: int = 60,
 ) -> Dict[str, Any]:
+
     payload = {
-        "bot_id": bot_id,
+        "bot_id": str(bot_id),
         "full_name": full_name,
         "phone": phone,
         "school_code": school_code,
         "first_subject_id": first_subject_id,
         "second_subject_id": second_subject_id,
+        "password": password,
+        "role": "user",
     }
 
+    print(payload)
     try:
         response = session.post(MAIN_URL, json=payload, timeout=timeout)
-        response.raise_for_status()  # 4xx / 5xx ushlaydi
-        return {
-            "ok": True,
-            "status_code": response.status_code,
-            "data": response.json(),
-        }
+
+        # ❗ HTTP xatolarni majburan chiqaramiz
+        response.raise_for_status()
+
+        return response.json()
 
     except requests.exceptions.Timeout:
-        return {
-            "ok": False,
-            "error": "Request timeout. Please try again.",
-        }
+        raise RegisterError("⏱ Server javob bermadi (timeout).")
 
-    except requests.exceptions.HTTPError as e:
-        return {
-            "ok": False,
-            "status_code": response.status_code,
-            "error": response.text,
-        }
+    except requests.exceptions.HTTPError:
+        raise RegisterError(
+            f"❌ Server xatosi ({response.status_code}): {response.text}"
+        )
 
     except requests.exceptions.RequestException as e:
-        return {
-            "ok": False,
-            "error": str(e),
-        }
+        raise RegisterError(f"❌ Network xato: {e}")

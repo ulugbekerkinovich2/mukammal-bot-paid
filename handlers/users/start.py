@@ -17,15 +17,15 @@ PHONE_RE = re.compile(r"^\+?\d{9,15}$")
 def confirm_kb():
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
-        InlineKeyboardButton("✅ Tasdiqlash", callback_data="reg_confirm"),
         InlineKeyboardButton("✏️ Tahrirlash", callback_data="reg_edit"),
+        InlineKeyboardButton("❌ Bekor qilish", callback_data="reg_cancel"),
     )
     kb.add(cancel_btn())
     return kb
 def cancel_btn():
     return InlineKeyboardButton(
-        text="❌ Bekor qilish",
-        callback_data="reg_cancel"
+        text="✅ Tasdiqlash",
+        callback_data="reg_confirm"
     )
 
 
@@ -134,16 +134,31 @@ async def reg_phone_text(message: types.Message, state: FSMContext):
     await message.answer("FIO kiriting:", reply_markup=ReplyKeyboardRemove())
     await Registration.fio.set()
 
-
+FULL_NAME_RE = re.compile(r"^[A-Za-zА-Яа-яЎўҚқҒғҲҳЁё\s]{5,}$")
 @dp.message_handler(state=Registration.fio)
 async def reg_fio(message: types.Message, state: FSMContext):
     fio = message.text.strip()
-    if len(fio) < 5:
-        return await message.answer("❌ FIO juda qisqa. Qayta kiriting:")
+
+    parts = fio.split()
+    if len(parts) < 2:
+        return await message.answer(
+            "❌ FIO xato.\nIltimos, Ism va Familiyani kiriting.\nMasalan: Ulug‘bek Erkinov"
+        )
+
+    if not FULL_NAME_RE.match(fio):
+        return await message.answer(
+            "❌ FIO faqat harflardan iborat bo‘lishi kerak.\nMasalan: Ulug‘bek Erkinov"
+        )
+
+    if any(len(p) < 2 for p in parts):
+        return await message.answer(
+            "❌ Ism yoki familiya juda qisqa.\nQayta kiriting:"
+        )
 
     await state.update_data(fio=fio)
     await message.answer("Maktab kodini kiriting (masalan: YU132):")
     await Registration.school_code.set()
+
 
 
 @dp.message_handler(state=Registration.school_code)
@@ -221,21 +236,26 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
 
     data = await state.get_data()
 
-    # ✅ DB ga yozish uchun:
-    phone=data["phone"]
-    full_name=data["fio"]
-    school_code=data["school_code"]
-    first_subject_id=data["first_subject_id"]
-    second_subject_id=data["second_subject_id"]
-    chat_id = call.from_user.id
-    data = register(
-        bot_id=chat_id,
-        full_name=full_name,
-        phone=phone,
-        school_code=school_code,
-        first_subject_id=first_subject_id,
-        second_subject_id=second_subject_id,
-    )
-    print(data)
-    await call.message.answer("✅ Ro‘yxatdan o‘tdingiz!")
-    await state.finish()
+    # 🔄 Loading message
+    loading_msg = await call.message.answer("⏳ Iltimos, kuting... Ro‘yxatdan o‘tkazilmoqda")
+
+    try:
+        result = register(
+            bot_id=call.from_user.id,
+            full_name=data["fio"],
+            phone=data["phone"],
+            school_code=data["school_code"],
+            first_subject_id=data["first_subject_id"],
+            second_subject_id=data["second_subject_id"],
+            password="1111"
+        )   
+        print(result)
+
+        await loading_msg.edit_text("✅ Ro‘yxatdan muvaffaqiyatli o‘tdingiz!")
+        await state.finish()
+
+    except Exception as e:
+        await loading_msg.edit_text(
+            "❌ Xatolik yuz berdi.\nIltimos, keyinroq qayta urinib ko‘ring."
+        )
+        print("REGISTER ERROR:", e)
