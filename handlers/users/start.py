@@ -256,6 +256,6 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
 
     except Exception as e:
         await loading_msg.edit_text(
-            "❌ Xatolik yuz berdi.\nIltimos, keyinroq qayta urinib ko‘ring."
+            f"❌ Xatolik yuz berdi.\nIltimos, keyinroq qayta urinib ko‘ring.INFO: {result['detail']}"
         )
         print("REGISTER ERROR:", e)
