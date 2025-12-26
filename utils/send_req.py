@@ -22,6 +22,7 @@ def register(
     first_subject_id: int,
     second_subject_id: int,
     password: str,
+    language: str = "uz",
     timeout: int = 60,
 ) -> Dict[str, Any]:
 
@@ -34,6 +35,7 @@ def register(
         "second_subject_id": second_subject_id,
         "password": password,
         "role": "user",
+        "language": language
     }
 
     print(payload)
@@ -43,7 +45,7 @@ def register(
         # ❗ HTTP xatolarni majburan chiqaramiz
         response.raise_for_status()
 
-        return response.json()
+        return response
 
     except requests.exceptions.Timeout:
         raise RegisterError("⏱ Server javob bermadi (timeout).")
