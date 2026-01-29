@@ -38,7 +38,7 @@ def register(
         "language": language
     }
 
-    print(payload)
+    # print(payload)
     try:
         response = session.post(MAIN_URL, json=payload, timeout=timeout)
 
