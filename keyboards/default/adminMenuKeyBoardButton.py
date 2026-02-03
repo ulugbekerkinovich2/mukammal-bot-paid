@@ -37,3 +37,11 @@ adminConfirm = ReplyKeyboardMarkup(
     ],
     resize_keyboard=True
 )
+
+adminKeyboard_user = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton("📊 Admin Panel")],
+        [KeyboardButton("📞Raqamni yuborish", request_contact=True)]
+    ],
+    resize_keyboard=True
+)

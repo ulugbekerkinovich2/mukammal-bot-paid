@@ -20,3 +20,12 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 restart_markup = ReplyKeyboardMarkup(resize_keyboard=True)
 restart_markup.add(KeyboardButton("/start"))
+
+
+adminKeyboard_user = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton("📊 Admin Panel")],
+        [KeyboardButton("📞Raqamni yuborish", request_contact=True)]
+    ],
+    resize_keyboard=True
+)

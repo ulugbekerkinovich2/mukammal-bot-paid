@@ -7,7 +7,7 @@ env.read_env()
 BOT_TOKEN = env.str("BOT_TOKEN")
 ADMINS = env.list("ADMINS")
 IP = env.str("ip")
-
+CHANNEL_ID = env.str("CHANNEL_ID")
 # SUBJECTS_MAP = {
 #     "Matematika": {
 #         "id": 20,
@@ -74,6 +74,7 @@ IP = env.str("ip")
 #         },
 #     },
 # }
+
 SUBJECTS_MAP = {
     "Matematika": {
         "id": 20,  # 30 talik

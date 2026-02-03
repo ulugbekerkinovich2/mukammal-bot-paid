@@ -3,14 +3,18 @@ from aiogram import types
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.builtin import CommandStart
 from aiogram.types import ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton
-
+from datetime import datetime
 from utils.send_req import register
 from loader import dp
 from keyboards.default.userKeyboard import keyboard_user
 from states.userStates import Registration
 from data.config import SUBJECTS_MAP
-from keyboards.inline.user_inline import language_keyboard_button
-
+from keyboards.inline.user_inline import language_keyboard_button, gender_kb
+from middlewares.throttling import save_user_state
+from utils.send_req import get_user, add_chat_id, save_chat_id
+from loader import dp, bot
+from data.config import ADMINS, CHANNEL_ID
+from keyboards.default.adminMenuKeyBoardButton import adminKeyboard_user
 PHONE_RE = re.compile(r"^\+?\d{9,15}$")
 FULL_NAME_RE = re.compile(r"^[A-Za-zА-Яа-яЎўҚқҒғҲҳЁёO‘o‘G‘g‘ʼ'\-\s]{5,}$")
 
@@ -20,7 +24,6 @@ FULL_NAME_RE = re.compile(r"^[A-Za-zА-Яа-яЎўҚқҒғҲҳЁёO‘o‘G‘g�
 TEXTS = {
     "choose_ui_lang": {"uz": "Tilni tanlang:", "ru": "Выберите язык:"},
 
-    # ✅ UPDATED: phone ask + example
     "phone_ask": {
         "uz": "Telefon raqamingizni yuboring yoki qo‘lda yozing.\n"
               "Namuna: 941234567 (yoki +998941234567)",
@@ -40,6 +43,10 @@ TEXTS = {
     "fio_invalid_letters": {
         "uz": "❌ FIO faqat harflardan iborat bo‘lishi kerak.\nMasalan: Ulug‘bek Erkinov",
         "ru": "❌ ФИО должно содержать только буквы.\nПример: Ulug‘bek Erkinov"
+    },
+    "ask_gender": {
+        "uz": "Jinsini tanlang:",
+        "ru": "Выберите пол:"
     },
     "fio_too_short": {
         "uz": "❌ Ism yoki familiya juda qisqa.\nQayta kiriting:",
@@ -215,13 +222,7 @@ def pair_is_allowed(first_uz: str, second_uz: str) -> bool:
     return second_uz in info.get("relative", {}).get("uz", [])
 
 def is_phone_ok(text: str) -> bool:
-    """
-    ✅ Accept:
-    - 941234567 (9 digits)
-    - +998941234567
-    - 998941234567
-    - generic +digits (9..15) (but we prioritize uz formats above)
-    """
+
     s = (text or "").strip().replace(" ", "").replace("-", "")
     if not s:
         return False
@@ -233,7 +234,7 @@ def is_phone_ok(text: str) -> bool:
 
 # ----------------------------
 # Handlers
-# ----------------------------
+# # ----------------------------
 @dp.message_handler(CommandStart(), state="*")
 async def start_cmd(message: types.Message, state: FSMContext):
     await state.finish()
@@ -242,6 +243,7 @@ async def start_cmd(message: types.Message, state: FSMContext):
         reply_markup=ui_lang_kb()
     )
     await Registration.ui_lang.set()
+
 
 @dp.callback_query_handler(lambda c: c.data == "reg_cancel", state="*")
 async def reg_cancel(call: types.CallbackQuery, state: FSMContext):
@@ -282,7 +284,7 @@ async def reg_phone_text(message: types.Message, state: FSMContext):
     if not is_phone_ok(raw_phone):
         return await message.answer(tr(ui_lang, "phone_invalid"))
 
-    # ✅ Normalize to +998... when user enters 941234567
+    
     phone = normalize_uz_phone(raw_phone)
     await state.update_data(phone=phone)
 
@@ -307,8 +309,32 @@ async def reg_fio(message: types.Message, state: FSMContext):
         return await message.answer(tr(ui_lang, "fio_too_short"))
 
     await state.update_data(fio=fio)
-    await message.answer(tr(ui_lang, "school_ask"))
+
+    await message.answer(tr(ui_lang, "ask_gender"), reply_markup=gender_kb(ui_lang))
+    await Registration.gender.set()
+
+
+
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith("gender:"), state=Registration.gender)
+async def reg_gender_cb(call: types.CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    ui_lang = data.get("ui_lang", "uz")
+
+    gender = call.data.split(":", 1)[1]  # "male" yoki "female"
+    if gender not in ("male", "female"):
+        await call.answer(tr(ui_lang, "gender_invalid"), show_alert=True)
+        return
+
+    await state.update_data(gender=gender)
+
+    # eski inline keyboardni olib tashlash uchun:
+    await call.message.edit_reply_markup()
+
+    await call.message.answer(tr(ui_lang, "school_ask"))
     await Registration.school_code.set()
+
+    await call.answer()  # loadingni yopadi
+
 
 @dp.message_handler(state=Registration.school_code)
 async def reg_school(message: types.Message, state: FSMContext):
@@ -385,6 +411,7 @@ async def pick_pair(call: types.CallbackQuery, state: FSMContext):
         tr(ui_lang, "confirm_title")
         + f"📞 Phone: {data['phone']}\n"
         + f"👤 FIO: {data['fio']}\n"
+        + f"👥 Gender: {data['gender']}\n"
         + f"🏫 School code: {data['school_code']}\n"
         + (("🗣 Imtihon tili: " if ui_lang == "uz" else "🗣 Язык экзамена: ") + exam_lang_label + "\n")
         + (("📘 1-fan: " if ui_lang == "uz" else "📘 Предмет 1: ") + first_label + "\n")
@@ -409,7 +436,7 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
     loading_msg = await call.message.answer(tr(ui_lang, "loading"))
 
     try:
-        register(
+        data = register(
             bot_id=call.from_user.id,
             full_name=data["fio"],
             phone=data["phone"],
@@ -418,8 +445,9 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
             second_subject_id=data["second_subject_id"],
             language=data.get("exam_lang", "uz"),
             password="1111",
+            gender=data.get("gender", "None"),
         )
-
+        print(data)
         await loading_msg.edit_text(tr(ui_lang, "success"))
         await state.finish()
 
