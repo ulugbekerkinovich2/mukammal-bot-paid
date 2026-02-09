@@ -889,28 +889,40 @@ async def pick_pair(call: types.CallbackQuery, state: FSMContext):
 
 import asyncio
 
-async def start_countdown_loader(msg, ui_lang: str, stop_event: asyncio.Event, total_limit: int = 60):
-    """
-    msg: loading_msg (Message)
-    stop_event: register_job tugaganda set() qilinadi
-    total_limit: nechanchi sekundgacha sanasin (API osilib qolsa ham cheklaydi)
-    """
+SPINNER = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]
+
+def _progress_bar(sec: int, total: int = 60, width: int = 14) -> str:
+    filled = min(width, int((sec / total) * width))
+    return "█" * filled + "░" * (width - filled)
+
+def _loader_text(ui_lang: str, sec: int, step: int, total_limit: int) -> str:
+    spinner = SPINNER[(sec // step) % len(SPINNER)]
+    bar = _progress_bar(sec, total=total_limit, width=14)
+    # xohlasangiz loading matnini tr orqali boshqacha qilasiz
+    title = tr(ui_lang, "loading")  # masalan: "Ro'yxatdan o'tkazilyapti..."
+    return (
+        f"{spinner} {title}\n"
+        f"`{bar}`  *{sec}s*"
+    )
+
+async def start_pretty_loader(msg, ui_lang: str, stop_event: asyncio.Event, total_limit: int = 60, step: int = 2):
     sec = 0
-    # birinchi matn
+    # birinchi update
     try:
-        await msg.edit_text(f"{tr(ui_lang, 'loading')}\n⏳ {sec}s")
+        await msg.edit_text(_loader_text(ui_lang, sec, step, total_limit), parse_mode="Markdown")
     except Exception:
         pass
 
     while not stop_event.is_set() and sec < total_limit:
-        await asyncio.sleep(1)
-        sec += 1
+        await asyncio.sleep(step)
+        sec += step
         try:
-            await msg.edit_text(f"{tr(ui_lang, 'loading')}\n⏳ {sec}s")
+            await msg.edit_text(_loader_text(ui_lang, sec, step, total_limit), parse_mode="Markdown")
         except Exception:
-            # ba'zan Telegram "message is not modified" yoki rate-limit berishi mumkin
-            # shunda jim o'tamiz
+            # "message is not modified" yoki rate-limit bo'lsa jim o'tamiz
             pass
+
+
 import asyncio
 
 @dp.callback_query_handler(lambda c: c.data in ["reg_confirm", "reg_edit"], state=Registration.verify)
@@ -928,7 +940,7 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
 
     stop_event = asyncio.Event()
     loader_task = asyncio.create_task(
-        start_countdown_loader(loading_msg, ui_lang=ui_lang, stop_event=stop_event, total_limit=60)
+        start_pretty_loader(loading_msg, ui_lang=ui_lang, stop_event=stop_event, total_limit=60, step=2)
     )
 
     try:
@@ -945,7 +957,6 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
         )
 
         stop_event.set()
-        # loader_task toza yopilsin
         try:
             await loader_task
         except Exception:
