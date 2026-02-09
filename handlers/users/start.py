@@ -887,6 +887,31 @@ async def pick_pair(call: types.CallbackQuery, state: FSMContext):
     await call.message.edit_text(text, reply_markup=confirm_kb(ui_lang))
     await Registration.verify.set()
 
+import asyncio
+
+async def start_countdown_loader(msg, ui_lang: str, stop_event: asyncio.Event, total_limit: int = 60):
+    """
+    msg: loading_msg (Message)
+    stop_event: register_job tugaganda set() qilinadi
+    total_limit: nechanchi sekundgacha sanasin (API osilib qolsa ham cheklaydi)
+    """
+    sec = 0
+    # birinchi matn
+    try:
+        await msg.edit_text(f"{tr(ui_lang, 'loading')}\n⏳ {sec}s")
+    except Exception:
+        pass
+
+    while not stop_event.is_set() and sec < total_limit:
+        await asyncio.sleep(1)
+        sec += 1
+        try:
+            await msg.edit_text(f"{tr(ui_lang, 'loading')}\n⏳ {sec}s")
+        except Exception:
+            # ba'zan Telegram "message is not modified" yoki rate-limit berishi mumkin
+            # shunda jim o'tamiz
+            pass
+import asyncio
 
 @dp.callback_query_handler(lambda c: c.data in ["reg_confirm", "reg_edit"], state=Registration.verify)
 async def reg_verify(call: types.CallbackQuery, state: FSMContext):
@@ -901,8 +926,12 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
 
     loading_msg = await call.message.answer(tr(ui_lang, "loading"))
 
+    stop_event = asyncio.Event()
+    loader_task = asyncio.create_task(
+        start_countdown_loader(loading_msg, ui_lang=ui_lang, stop_event=stop_event, total_limit=60)
+    )
+
     try:
-        # ✅ QUEUE/JOB: await register_job(...)
         res = await register_job(
             bot_id=str(call.from_user.id),
             full_name=data["fio"],
@@ -915,15 +944,25 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
             gender=data.get("gender", "male"),
         )
 
-        # res format: {"ok": True/False, "status": ..., "data"/"text"/"raw"}
+        stop_event.set()
+        # loader_task toza yopilsin
+        try:
+            await loader_task
+        except Exception:
+            pass
+
         if res.get("ok"):
             await loading_msg.edit_text(tr(ui_lang, "success"))
             await state.finish()
             return
 
-        # error from API
         err_txt = res.get("text") or res.get("raw") or str(res)
         await loading_msg.edit_text(pretty_register_error(err_txt, ui_lang=ui_lang))
 
     except Exception as e:
+        stop_event.set()
+        try:
+            await loader_task
+        except Exception:
+            pass
         await loading_msg.edit_text(pretty_register_error(str(e), ui_lang=ui_lang))
