@@ -280,10 +280,10 @@ async def start_cmd(message: types.Message, state: FSMContext):
 
 @dp.callback_query_handler(lambda c: c.data == "check_sub", state="*")
 async def check_sub(call: types.CallbackQuery, state: FSMContext):
-    # ok = await is_subscribed(call.from_user.id, call.bot)
-    # if not ok:
-    #     await call.answer("Hali obuna emassiz. Avval obuna bo‘ling ✅", show_alert=True)
-    #     return
+    ok = await is_subscribed(call.from_user.id, call.bot)
+    if not ok:
+        await call.answer("Hali obuna emassiz. Avval obuna bo‘ling ✅", show_alert=True)
+        return
 
     await call.message.edit_reply_markup(reply_markup=None)
     await call.message.answer(
