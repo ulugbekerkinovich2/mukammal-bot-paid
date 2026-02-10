@@ -8,6 +8,9 @@ BOT_TOKEN = env.str("BOT_TOKEN")
 ADMINS = env.list("ADMINS")
 IP = env.str("ip")
 CHANNEL_ID = env.str("CHANNEL_ID")
+ADMIN_CHAT_ID = env.str("ADMIN_CHAT_ID")
+CHANNEL_USERNAME = env.str("CHANNEL_USERNAME")
+CHANNEL_LINK = env.str("CHANNEL_LINK")
 # SUBJECTS_MAP = {
 #     "Matematika": {
 #         "id": 20,

@@ -13,10 +13,14 @@ from keyboards.inline.user_inline import language_keyboard_button, gender_kb
 
 # ✅ NEW: register_job (queue/job)
 from utils.send_req import register_job
+from typing import Optional
 
 PHONE_RE = re.compile(r"^\+?\d{9,15}$")
 FULL_NAME_RE = re.compile(r"^[A-Za-zА-Яа-яЎўҚқҒғҲҳЁёO‘o‘G‘g‘ʼ'\-\s]{5,}$")
-
+from datetime import datetime
+import asyncio
+from data.config import ADMINS as ADMIN_IDS, ADMIN_CHAT_ID, CHANNEL_USERNAME,CHANNEL_LINK 
+# ADMIN_IDS = [123456789]  # <-- admin chat_id larni yozing (list)
 # ----------------------------
 # i18n TEXTS (UI tili bo‘yicha)
 # ----------------------------
@@ -234,8 +238,7 @@ def is_phone_ok(text: str) -> bool:
 from aiogram import types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-CHANNEL_USERNAME = "@mentalaba_uz"
-CHANNEL_LINK = "https://t.me/mentalaba_uz"
+
 
 def sub_kb():
     kb = InlineKeyboardMarkup(row_width=1)
@@ -277,10 +280,10 @@ async def start_cmd(message: types.Message, state: FSMContext):
 
 @dp.callback_query_handler(lambda c: c.data == "check_sub", state="*")
 async def check_sub(call: types.CallbackQuery, state: FSMContext):
-    ok = await is_subscribed(call.from_user.id, call.bot)
-    if not ok:
-        await call.answer("Hali obuna emassiz. Avval obuna bo‘ling ✅", show_alert=True)
-        return
+    # ok = await is_subscribed(call.from_user.id, call.bot)
+    # if not ok:
+    #     await call.answer("Hali obuna emassiz. Avval obuna bo‘ling ✅", show_alert=True)
+    #     return
 
     await call.message.edit_reply_markup(reply_markup=None)
     await call.message.answer(
@@ -478,47 +481,80 @@ async def pick_pair(call: types.CallbackQuery, state: FSMContext):
     await call.message.edit_text(text, reply_markup=confirm_kb(ui_lang))
     await Registration.verify.set()
 
-import asyncio
 
-SPINNER = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]
 
-def _progress_bar(sec: int, total: int = 60, width: int = 14) -> str:
-    filled = min(width, int((sec / total) * width))
-    return "█" * filled + "░" * (width - filled)
+def now_str() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-def _loader_text(ui_lang: str, sec: int, step: int, total_limit: int) -> str:
-    spinner = SPINNER[(sec // step) % len(SPINNER)]
-    bar = _progress_bar(sec, total=total_limit, width=14)
-    # xohlasangiz loading matnini tr orqali boshqacha qilasiz
-    title = tr(ui_lang, "loading")  # masalan: "Ro'yxatdan o'tkazilyapti..."
-    return (
-        f"{spinner} {title}\n"
-        f"`{bar}`  *{sec}s*"
-    )
+def _tg_user_link(user: types.User) -> str:
+    if user.username:
+        return f"@{user.username}"
+    return f"<a href='tg://user?id={user.id}'>user</a>"
 
-async def start_pretty_loader(msg, ui_lang: str, stop_event: asyncio.Event, total_limit: int = 60, step: int = 2):
-    sec = 0
-    # birinchi update
+async def notify_admins(bot, text: str):
     try:
-        await msg.edit_text(_loader_text(ui_lang, sec, step, total_limit), parse_mode="Markdown")
+        await bot.send_message(
+            ADMIN_CHAT_ID,
+            text,
+            parse_mode="HTML",
+            disable_web_page_preview=True
+        )
     except Exception:
         pass
 
-    while not stop_event.is_set() and sec < total_limit:
-        await asyncio.sleep(step)
-        sec += step
-        try:
-            await msg.edit_text(_loader_text(ui_lang, sec, step, total_limit), parse_mode="Markdown")
-        except Exception:
-            # "message is not modified" yoki rate-limit bo'lsa jim o'tamiz
-            pass
+def build_register_details(data: dict) -> str:
+    phone = data.get("phone", "-")
+    school_code = data.get("school_code", "-")
+    exam_lang = data.get("exam_lang", data.get("language", "-"))
+    gender = data.get("gender", "-")
+    s1 = data.get("first_subject_id", "-")
+    s2 = data.get("second_subject_id", "-")
 
+    return (
+        f"📞 <b>Phone:</b> <code>{phone}</code>\n"
+        f"🏫 <b>School code:</b> <code>{school_code}</code>\n"
+        f"🗣 <b>Exam lang:</b> <code>{exam_lang}</code>\n"
+        f"🚻 <b>Gender:</b> <code>{gender}</code>\n"
+        f"📚 <b>Subjects:</b> <code>{s1}</code> + <code>{s2}</code>"
+    )
 
-import asyncio
+def admin_register_message(
+    *,
+    status: str,                 # "SUCCESS" / "FAIL"
+    user: types.User,
+    full_name: str,
+    ok: bool,
+    error: Optional[str] = None,
+    details: Optional[str] = None
+) -> str:
+    t = now_str()
+    user_link = _tg_user_link(user)
+
+    text = (
+        f"🧾 <b>REGISTER {status}</b>\n"
+        f"🕒 <b>Time:</b> {t}\n"
+        f"👤 <b>User:</b> {user_link}\n"
+        f"🆔 <b>Chat ID:</b> <code>{user.id}</code>\n"
+        f"📝 <b>Full name:</b> {full_name}\n"
+        f"✅ <b>OK:</b> {'YES' if ok else 'NO'}"
+    )
+
+    if details:
+        text += "\n\n" + details
+
+    if error:
+        err = str(error).strip()
+        if len(err) > 1200:
+            err = err[:1200] + "…"
+        text += f"\n\n❗ <b>Error:</b>\n<code>{err}</code>"
+
+    return text
+
 
 @dp.callback_query_handler(lambda c: c.data in ["reg_confirm", "reg_edit"], state=Registration.verify)
 async def reg_verify(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
+
     data = await state.get_data()
     ui_lang = data.get("ui_lang", "uz")
 
@@ -527,12 +563,12 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
         await Registration.exam_lang.set()
         return
 
-    loading_msg = await call.message.answer(tr(ui_lang, "loading"))
+    full_name = data.get("fio") or "-"
+    details = build_register_details(data)
 
-    stop_event = asyncio.Event()
-    loader_task = asyncio.create_task(
-        start_pretty_loader(loading_msg, ui_lang=ui_lang, stop_event=stop_event, total_limit=60, step=2)
-    )
+    # ✅ USER: darrov "ro'yhatdan o'tdingiz" (loader yo'q)
+    # Muhim: bu optimistik xabar, agar backend fail bo'lsa keyin errorga almashtiramiz
+    user_msg = await call.message.answer(tr(ui_lang, "success"))
 
     try:
         res = await register_job(
@@ -547,24 +583,53 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
             gender=data.get("gender", "male"),
         )
 
-        stop_event.set()
-        try:
-            await loader_task
-        except Exception:
-            pass
+        # SUCCESS
+        if isinstance(res, dict) and res.get("ok"):
+            admin_text = admin_register_message(
+                status="SUCCESS",
+                user=call.from_user,
+                full_name=full_name,
+                ok=True,
+                error=None,
+                details=details
+            )
+            await notify_admins(call.bot, admin_text)
 
-        if res.get("ok"):
-            await loading_msg.edit_text(tr(ui_lang, "success"))
             await state.finish()
             return
 
-        err_txt = res.get("text") or res.get("raw") or str(res)
-        await loading_msg.edit_text(pretty_register_error(err_txt, ui_lang=ui_lang))
+        # FAIL (backend javobi)
+        err_txt = None
+        if isinstance(res, dict):
+            err_txt = res.get("text") or res.get("raw") or str(res)
+        else:
+            err_txt = str(res)
+
+        # ✅ USER: successni errorga almashtiramiz
+        await user_msg.edit_text(pretty_register_error(err_txt, ui_lang=ui_lang))
+
+        # ✅ ADMIN: fail + detail
+        admin_text = admin_register_message(
+            status="FAIL",
+            user=call.from_user,
+            full_name=full_name,
+            ok=False,
+            error=err_txt,
+            details=details
+        )
+        await notify_admins(call.bot, admin_text)
 
     except Exception as e:
-        stop_event.set()
-        try:
-            await loader_task
-        except Exception:
-            pass
-        await loading_msg.edit_text(pretty_register_error(str(e), ui_lang=ui_lang))
+        # ✅ USER: successni errorga almashtiramiz
+        await user_msg.edit_text(pretty_register_error(str(e), ui_lang=ui_lang))
+
+        # ✅ ADMIN: exception fail + detail
+        admin_text = admin_register_message(
+            status="FAIL",
+            user=call.from_user,
+            full_name=full_name,
+            ok=False,
+            error=str(e),
+            details=details
+        )
+        await notify_admins(call.bot, admin_text)
