@@ -10,7 +10,7 @@ from utils.job_queue import JobQueue
 load_dotenv()
 
 MAIN_URL = "https://dtm-api.misterdev.uz/api/v1/auth/register"
-
+BASE_URL = "https://dtm-api.misterdev.uz/api/v1"
 # Global singletonlar (bot ishga tushganda start qilasiz)
 http = HttpClient(max_concurrency=20, timeout_total=30, timeout_connect=5, retry=3)
 queue = JobQueue(workers=10, maxsize=2000)
@@ -42,6 +42,8 @@ def _register_payload(
     password: str,
     language: str,
     gender: str,
+    district: str,
+    region: str,
 ) -> Dict[str, Any]:
     return {
         "bot_id": str(bot_id),
@@ -54,6 +56,8 @@ def _register_payload(
         "role": "user",
         "language": language,
         "gender": gender,
+        "district": district,
+        "region": region,
     }
 
 
@@ -67,6 +71,8 @@ async def register_job(
     password: str,
     language: str,
     gender: str,
+    district: str,
+    region: str,
 ) -> Dict[str, Any]:
     """
     Bu FUNKSIYA bot handler ichida chaqiriladi.
@@ -82,6 +88,8 @@ async def register_job(
         password=password,
         language=language,
         gender=gender,
+        district=district,
+        region=region,
     )
 
     async def do_call():
@@ -201,3 +209,26 @@ async def add_chat_id(chat_id_user, first_name_user, last_name_user, pin, phone,
             if response.status >= 400:
                 return {"ok": False, "status": response.status, "text": text}
             return await response.json()
+
+
+async def fetch_school_and_districts(region: str, district: str):
+    url = f"{BASE_URL}/admin/districts-and-schools"
+
+    params = {"region": region, "district": district}
+
+    timeout = aiohttp.ClientTimeout(total=20)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with session.get(url, params=params) as response:
+            # avval text o‘qib olamiz (xatolik bo‘lsa ko‘rsatish uchun)
+            text = await response.text()
+
+            if response.status >= 400:
+                return {"ok": False, "status": response.status, "text": text}
+
+
+            try:
+                data = await response.json()
+            except aiohttp.ContentTypeError:
+                return {"ok": False, "status": response.status, "text": text}
+
+            return data

@@ -7,6 +7,10 @@ class Registration(StatesGroup):
     fio = State()
     school_code = State()
 
+    region = State()
+    district = State()
+    school = State()
+
     exam_lang = State()         
     second_subject = State()     
     verify = State()             
