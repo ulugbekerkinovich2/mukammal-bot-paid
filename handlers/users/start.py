@@ -746,7 +746,6 @@
 #         await Registration.district.set()
 #         return
 
-
 import re
 import json
 from datetime import datetime
@@ -766,16 +765,16 @@ from keyboards.inline.user_inline import language_keyboard_button, gender_kb
 
 from utils.send_req import register_job
 from data.config import ADMIN_CHAT_ID, CHANNEL_USERNAME, CHANNEL_LINK
-from data.config import BASE_URL  # masalan: https://dtm-api.misterdev.uz/api/v1
-
+from data.config import BASE_URL  # masalan: https://dtm-api.misterdev.uz/api/v1  (yoki faqat domain bo'lsa ham mayli)
 
 PHONE_RE = re.compile(r"^\+?\d{9,15}$")
 FULL_NAME_RE = re.compile(r"^[A-Za-zА-Яа-яЎўҚқҒғҲҳЁёO‘o‘G‘g‘ʼ'\-\s]{5,}$")
 
+# ✅ BASE_URL noto'g'ri bo'lsa ham /api/v1 ni qo'shib olamiz (404 muammosi uchun)
+API_V1 = (BASE_URL or "").rstrip("/")
+if not API_V1.endswith("/api/v1"):
+    API_V1 = API_V1 + "/api/v1"
 
-# ----------------------------
-# i18n TEXTS
-# ----------------------------
 TEXTS = {
     "choose_ui_lang": {"uz": "Tilni tanlang:", "ru": "Выберите язык:"},
 
@@ -805,15 +804,14 @@ TEXTS = {
     "ask_gender": {"uz": "Jinsini tanlang:", "ru": "Выберите пол:"},
     "gender_invalid": {"uz": "❌ Noto‘g‘ri tanlov.", "ru": "❌ Неверный выбор."},
 
-    # Location flow
     "region_ask": {"uz": "Viloyatni tanlang:", "ru": "Выберите регион:"},
     "district_ask": {"uz": "Tumanni tanlang:", "ru": "Выберите район:"},
     "school_pick_ask": {"uz": "Maktabni tanlang:", "ru": "Выберите школу:"},
+
     "regions_not_found": {"uz": "Viloyatlar topilmadi.", "ru": "Регионы не найдены."},
     "districts_not_found": {"uz": "Tumanlar topilmadi.", "ru": "Районы не найдены."},
     "schools_not_found": {"uz": "Maktablar topilmadi.", "ru": "Школы не найдены."},
 
-    # Exam / subjects
     "exam_lang_ask": {"uz": "Imtihon tilini tanlang:", "ru": "Выберите язык экзамена:"},
     "pair_ask": {"uz": "Juftlikni tanlang:", "ru": "Выберите пару:"},
     "pair_not_found": {"uz": "❌ Fan topilmadi. Qayta tanlang.", "ru": "❌ Предмет не найден. Выберите снова."},
@@ -850,7 +848,6 @@ def pretty_register_error(raw: str, ui_lang: str = "uz") -> str:
         except Exception:
             detail = None
 
-    # {"ok": False, "status": 400, "text": "..."}
     if raw.strip().startswith("{") and raw.strip().endswith("}"):
         try:
             p = json.loads(raw)
@@ -880,7 +877,7 @@ def pretty_register_error(raw: str, ui_lang: str = "uz") -> str:
 
 
 # ----------------------------
-# API (single endpoint)
+# API calls (single endpoint)
 # ----------------------------
 async def _api_get(url: str, params: Dict[str, str]) -> Dict[str, Any]:
     timeout = aiohttp.ClientTimeout(total=25)
@@ -896,50 +893,32 @@ async def _api_get(url: str, params: Dict[str, str]) -> Dict[str, Any]:
 
 
 async def fetch_regions() -> Dict[str, Any]:
-    """
-    GET /admin/districts-and-schools  -> {"type":"regions","data":[...]}
-    """
-    url = f"{BASE_URL}/admin/districts-and-schools"
+    url = f"{API_V1}/admin/districts-and-schools"
     payload = await _api_get(url, {})
-
     if isinstance(payload, dict) and payload.get("ok") is False:
         return payload
-
     if not isinstance(payload, dict) or payload.get("type") != "regions":
-        return {"ok": False, "status": 500, "text": f"Unexpected payload: {payload}"}
-
+        return {"ok": False, "status": 500, "text": f"Unexpected regions payload: {payload}"}
     return {"ok": True, "regions": payload.get("data") or []}
 
 
 async def fetch_districts(region: str) -> Dict[str, Any]:
-    """
-    GET ...?region=... -> {"type":"districts","data":[...]}
-    """
-    url = f"{BASE_URL}/admin/districts-and-schools"
+    url = f"{API_V1}/admin/districts-and-schools"
     payload = await _api_get(url, {"region": region})
-
     if isinstance(payload, dict) and payload.get("ok") is False:
         return payload
-
     if not isinstance(payload, dict) or payload.get("type") != "districts":
-        return {"ok": False, "status": 500, "text": f"Unexpected payload: {payload}"}
-
+        return {"ok": False, "status": 500, "text": f"Unexpected districts payload: {payload}"}
     return {"ok": True, "districts": payload.get("data") or []}
 
 
 async def fetch_schools(region: str, district: str) -> Dict[str, Any]:
-    """
-    GET ...?region=...&district=... -> {"type":"schools","data":[{id,code,name},...]}
-    """
-    url = f"{BASE_URL}/admin/districts-and-schools"
+    url = f"{API_V1}/admin/districts-and-schools"
     payload = await _api_get(url, {"region": region, "district": district})
-
     if isinstance(payload, dict) and payload.get("ok") is False:
         return payload
-
     if not isinstance(payload, dict) or payload.get("type") != "schools":
-        return {"ok": False, "status": 500, "text": f"Unexpected payload: {payload}"}
-
+        return {"ok": False, "status": 500, "text": f"Unexpected schools payload: {payload}"}
     return {"ok": True, "schools": payload.get("data") or []}
 
 
@@ -996,30 +975,27 @@ def districts_kb(ui_lang: str, districts: List[str]):
     for d in districts[:80]:
         dd = str(d)[:50]
         kb.add(InlineKeyboardButton(dd, callback_data=f"reg_district:{dd}"))
-    kb.add(InlineKeyboardButton(tr(ui_lang, "btn_back"), callback_data="reg_back:region"))
-    kb.add(InlineKeyboardButton(tr(ui_lang, "btn_cancel"), callback_data="reg_cancel"))
+    kb.row(
+        InlineKeyboardButton(tr(ui_lang, "btn_back"), callback_data="reg_back:region"),
+        InlineKeyboardButton(tr(ui_lang, "btn_cancel"), callback_data="reg_cancel"),
+    )
     return kb
 
 
+# ✅ schools 2 ustun (2ta)
 def schools_kb(ui_lang: str, schools: List[Dict[str, Any]]):
-    kb = InlineKeyboardMarkup(row_width=2)  # ✅ 2 ustun
+    kb = InlineKeyboardMarkup(row_width=2)
     for s in schools[:120]:
         code = str(s.get("code") or "")
         name = str(s.get("name") or code)
         if not code:
             continue
-
-        # Tugma matni juda uzun bo'lsa kesib yuboramiz
-        btn_text = name[:32]
-        kb.insert(InlineKeyboardButton(btn_text, callback_data=f"reg_school:{code}"))
-
-    # pastdagi back/cancel alohida qatorda tursin
+        kb.insert(InlineKeyboardButton(name[:32], callback_data=f"reg_school:{code}"))
     kb.row(
         InlineKeyboardButton(tr(ui_lang, "btn_back"), callback_data="reg_back:district"),
         InlineKeyboardButton(tr(ui_lang, "btn_cancel"), callback_data="reg_cancel"),
     )
     return kb
-
 
 
 def pairs_kb(ui_lang: str = "uz"):
@@ -1107,9 +1083,15 @@ def _tg_user_link(user: types.User) -> str:
 
 async def notify_admins(bot, text: str):
     try:
-        await bot.send_message(ADMIN_CHAT_ID, text, parse_mode="HTML", disable_web_page_preview=True)
-    except Exception:
-        pass
+        await bot.send_message(
+            ADMIN_CHAT_ID,
+            text,
+            parse_mode="HTML",
+            disable_web_page_preview=True
+        )
+    except Exception as e:
+        # debug (xohlasangiz olib tashlaysiz)
+        print("ADMIN SEND ERROR =>", repr(e), "ADMIN_CHAT_ID=", ADMIN_CHAT_ID)
 
 
 def build_register_details(data: dict) -> str:
@@ -1254,7 +1236,6 @@ async def reg_gender_cb(call: types.CallbackQuery, state: FSMContext):
 
     await state.update_data(gender=gender)
 
-    # ✅ Regions API
     res = await fetch_regions()
     if not (isinstance(res, dict) and res.get("ok")):
         return await call.message.answer(pretty_register_error(str(res), ui_lang))
@@ -1356,9 +1337,6 @@ async def reg_back(call: types.CallbackQuery, state: FSMContext):
         return
 
 
-# ----------------------------
-# Exam lang -> Pair -> Verify -> register_job
-# ----------------------------
 @dp.callback_query_handler(lambda c: c.data in ["uz", "ru"], state=Registration.exam_lang)
 async def pick_exam_language(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
@@ -1450,7 +1428,6 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
         return
 
     user_msg = await call.message.answer(tr(ui_lang, "success"))
-    full_name = data.get("fio") or "-"
 
     try:
         res = await register_job(
@@ -1467,10 +1444,21 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
             region=data.get("region"),
         )
 
+        # ✅ SUCCESS -> gruppaga yuboriladi (siz so'ragan narsa)
         if isinstance(res, dict) and res.get("ok"):
+            admin_text = (
+                f"🧾 <b>REGISTER SUCCESS</b>\n"
+                f"🕒 <b>Time:</b> {now_str()}\n"
+                f"👤 <b>User:</b> {_tg_user_link(call.from_user)}\n"
+                f"🆔 <b>Chat ID:</b> <code>{call.from_user.id}</code>\n"
+                f"📝 <b>Full name:</b> {data.get('fio','-')}\n\n"
+                f"{build_register_details(data)}"
+            )
+            await notify_admins(call.bot, admin_text)
             await state.finish()
             return
 
+        # FAIL
         err_txt = res.get("text") if isinstance(res, dict) else str(res)
         await user_msg.edit_text(pretty_register_error(str(err_txt), ui_lang=ui_lang))
 
@@ -1479,7 +1467,7 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
             f"🕒 <b>Time:</b> {now_str()}\n"
             f"👤 <b>User:</b> {_tg_user_link(call.from_user)}\n"
             f"🆔 <b>Chat ID:</b> <code>{call.from_user.id}</code>\n"
-            f"📝 <b>Full name:</b> {full_name}\n\n"
+            f"📝 <b>Full name:</b> {data.get('fio','-')}\n\n"
             f"{build_register_details(data)}\n\n"
             f"❗ <b>Error:</b>\n<code>{str(err_txt)[:1200]}</code>"
         )
@@ -1493,7 +1481,7 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
             f"🕒 <b>Time:</b> {now_str()}\n"
             f"👤 <b>User:</b> {_tg_user_link(call.from_user)}\n"
             f"🆔 <b>Chat ID:</b> <code>{call.from_user.id}</code>\n"
-            f"📝 <b>Full name:</b> {full_name}\n\n"
+            f"📝 <b>Full name:</b> {data.get('fio','-')}\n\n"
             f"{build_register_details(data)}\n\n"
             f"❗ <b>Exception:</b>\n<code>{str(e)[:1200]}</code>"
         )
