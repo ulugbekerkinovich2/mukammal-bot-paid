@@ -817,7 +817,7 @@ TEXTS = {
     "schools_not_found": {"uz": "Maktablar topilmadi.", "ru": "Школы не найдены."},
 
     # ✅ NEW: sinf harfi
-    "class_letter_ask": {"uz": "Sinf harfini tanlang (masalan: A, B, D...):", "ru": "Выберите букву класса (например: А, Б, В...):"},
+    "class_letter_ask": {"uz": "Sinf harfini tanlang (masalan: 11-A, 11-B, 11-D bo'lsa harfni tanlasangiz yetarli):", "ru": "Выберите букву класса (например: Если это 11-A, 11-B, 11-D, просто выберите букву.):"},
     "class_letter_selected": {"uz": "✅ Sinf harfi tanlandi:", "ru": "✅ Выбрана буква класса:"},
 
     "exam_lang_ask": {"uz": "Imtihon tilini tanlang:", "ru": "Выберите язык экзамена:"},
