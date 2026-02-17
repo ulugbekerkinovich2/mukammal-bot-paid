@@ -44,6 +44,7 @@ def _register_payload(
     gender: str,
     district: str,
     region: str,
+    group_name: str
 ) -> Dict[str, Any]:
     return {
         "bot_id": str(bot_id),
@@ -58,6 +59,7 @@ def _register_payload(
         "gender": gender,
         "district": district,
         "region": region,
+        "group_name": group_name
     }
 
 
@@ -73,6 +75,7 @@ async def register_job(
     gender: str,
     district: str,
     region: str,
+    group_name: str
 ) -> Dict[str, Any]:
     """
     Bu FUNKSIYA bot handler ichida chaqiriladi.
@@ -90,6 +93,7 @@ async def register_job(
         gender=gender,
         district=district,
         region=region,
+        group_name=group_name
     )
 
     async def do_call():

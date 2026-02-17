@@ -11,6 +11,8 @@ class Registration(StatesGroup):
     district = State()
     school = State()
 
+    class_letter = State()
+    
     exam_lang = State()         
     second_subject = State()     
     verify = State()             
