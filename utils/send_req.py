@@ -117,7 +117,7 @@ async def register_user(
 ) -> Dict[str, Any]:
 
     payload = _register_payload(
-        bot_id="915920479",
+        bot_id=bot_id,
         full_name=full_name,
         phone=phone,
         school_code=school_code,
