@@ -15,7 +15,7 @@ from states.userStates import Registration
 from data.config import SUBJECTS_MAP
 from keyboards.inline.user_inline import language_keyboard_button, gender_kb
 
-from utils.send_req import register_job
+from utils.send_req import register_user
 from data.config import ADMIN_CHAT_ID, CHANNEL_USERNAME, CHANNEL_LINK
 from data.config import BASE_URL
 
@@ -909,9 +909,9 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
     await cleanup_bot_messages(call.bot, call.message.chat.id, state, except_ids={call.message.message_id})
     user_msg = await call.bot.send_message(call.message.chat.id, tr(ui_lang, "success"))
     await state.update_data(bot_msg_ids=[user_msg.message_id])
-
+    print(data)
     try:
-        res = await register_job(
+        res = await register_user(
             bot_id=str(call.from_user.id),
             full_name=data["fio"],
             phone=data["phone"],
