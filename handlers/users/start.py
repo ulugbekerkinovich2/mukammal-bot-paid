@@ -516,14 +516,14 @@ async def is_subscribed(user_id: int, bot) -> bool:
 async def start_cmd(message: types.Message, state: FSMContext):
     await state.finish()
 
-    # ok = await is_subscribed(message.from_user.id, message.bot)
-    # if not ok:
-    #     await send_clean(
-    #         message, state,
-    #         "Davom etish uchun kanalga majburiy obuna bo‘ling:\nObuna bo‘lgach, 🔄 Tekshirish tugmasini bosing.",
-    #         reply_markup=sub_kb()
-    #     )
-    #     return
+    ok = await is_subscribed(message.from_user.id, message.bot)
+    if not ok:
+        await send_clean(
+            message, state,
+            "Davom etish uchun kanalga majburiy obuna bo‘ling:\nObuna bo‘lgach, 🔄 Tekshirish tugmasini bosing.",
+            reply_markup=sub_kb()
+        )
+        return
 
     await send_clean(
         message, state,
