@@ -2,7 +2,8 @@ from aiogram.dispatcher.filters.state import State, StatesGroup
 
 class Registration(StatesGroup):
     ui_lang = State()            
-
+    first_name = State()
+    last_name = State()
     phone = State()
     fio = State()
     school_code = State()
