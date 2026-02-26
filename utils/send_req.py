@@ -82,6 +82,7 @@ def _register_payload(
     district: str,
     region: str,
     group_name: str,
+    status: bool = True,
 ) -> Dict[str, Any]:
     return {
         "bot_id": str(bot_id),  # ⚠️ bu yerda endi HARD-CODE YO‘Q
@@ -97,6 +98,7 @@ def _register_payload(
         "district": district or "",
         "region": region or "",
         "group_name": group_name or "",
+        "status": status,
     }
 
 
@@ -114,6 +116,7 @@ async def register_user(
     region: str = "",
     group_name: str = "",
     retries: int = 2,
+    status: bool = True,
 ) -> Dict[str, Any]:
 
     payload = _register_payload(
@@ -129,6 +132,7 @@ async def register_user(
         district=district,
         region=region,
         group_name=group_name,
+        status=status,
     )
 
     print("\n========== REGISTER REQUEST ==========")
