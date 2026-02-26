@@ -176,7 +176,7 @@ def pretty_register_error(raw: str, ui_lang: str = "uz") -> str:
 
 
 # ----------------------------
-# Bot message cleanup helpers (delete ketma-ketlikda)
+# Bot message cleanup helpers
 # ----------------------------
 async def cleanup_bot_messages(bot, chat_id: int, state: FSMContext, except_ids: Optional[Set[int]] = None):
     data = await state.get_data()
@@ -226,7 +226,7 @@ async def edit_clean(call: types.CallbackQuery, state: FSMContext, text: str, re
 
 
 # ----------------------------
-# API calls (single endpoint)
+# API calls
 # ----------------------------
 async def _api_get(url: str, params: Dict[str, str]) -> Dict[str, Any]:
     timeout = aiohttp.ClientTimeout(total=25)
@@ -284,6 +284,7 @@ def ui_lang_kb():
     return kb
 
 
+# ✅ FIX: callback_data'lar handler bilan moslandi (reg_confirm / reg_edit)
 def confirm_kb(ui_lang: str):
     kb = InlineKeyboardMarkup(row_width=2)
 
@@ -297,53 +298,12 @@ def confirm_kb(ui_lang: str):
         confirm = "✅ Tasdiqlash"
 
     kb.row(
-        InlineKeyboardButton(edit, callback_data="reg_edit_menu"),
+        InlineKeyboardButton(edit, callback_data="reg_edit"),
         InlineKeyboardButton(cancel, callback_data="reg_cancel"),
     )
-    kb.row(InlineKeyboardButton(confirm, callback_data="reg_confirm_1"))
+    kb.row(InlineKeyboardButton(confirm, callback_data="reg_confirm"))
     return kb
 
-def final_confirm_kb(ui_lang: str):
-    kb = InlineKeyboardMarkup(row_width=2)
-    if ui_lang == "ru":
-        yes = "✅ Да, отправить"
-        no = "✏️ Нет, исправить"
-        cancel = "❌ Отмена"
-    else:
-        yes = "✅ Ha, yuborish"
-        no = "✏️ Yo‘q, tahrirlash"
-        cancel = "❌ Bekor qilish"
-
-    kb.row(
-        InlineKeyboardButton(no, callback_data="reg_edit_menu"),
-        InlineKeyboardButton(cancel, callback_data="reg_cancel"),
-    )
-    kb.row(InlineKeyboardButton(yes, callback_data="reg_confirm_2"))
-    return kb
-
-def edit_menu_kb(ui_lang: str):
-    kb = InlineKeyboardMarkup(row_width=2)
-    if ui_lang == "ru":
-        kb.row(
-            InlineKeyboardButton("📞 Телефон", callback_data="edit:phone"),
-            InlineKeyboardButton("👤 ФИО", callback_data="edit:fio"),
-        )
-        kb.row(
-            InlineKeyboardButton("🗣 Язык экзамена", callback_data="edit:exam_lang"),
-            InlineKeyboardButton("📚 Предметы", callback_data="edit:subjects"),
-        )
-        kb.row(InlineKeyboardButton("⬅️ Назад", callback_data="edit:back_confirm"))
-    else:
-        kb.row(
-            InlineKeyboardButton("📞 Telefon", callback_data="edit:phone"),
-            InlineKeyboardButton("👤 FIO", callback_data="edit:fio"),
-        )
-        kb.row(
-            InlineKeyboardButton("🗣 Imtihon tili", callback_data="edit:exam_lang"),
-            InlineKeyboardButton("📚 Fanlar", callback_data="edit:subjects"),
-        )
-        kb.row(InlineKeyboardButton("⬅️ Orqaga", callback_data="edit:back_confirm"))
-    return kb
 
 def sub_kb():
     kb = InlineKeyboardMarkup(row_width=1)
@@ -518,7 +478,6 @@ def build_confirm_text(ui_lang: str, data: dict) -> str:
     first_label = data.get("first_subject_uz", "-") if ui_lang == "uz" else (data.get("first_subject_ru") or data.get("first_subject_uz") or "-")
     second_label = data.get("second_subject_uz", "-") if ui_lang == "uz" else (data.get("second_subject_ru") or data.get("second_subject_uz") or "-")
 
-    # ✅ show school_name/number, not code
     school_name = data.get("school_name") or "-"
 
     lines = [
@@ -558,15 +517,6 @@ async def is_subscribed(user_id: int, bot) -> bool:
 async def start_cmd(message: types.Message, state: FSMContext):
     await state.finish()
 
-    ok = await is_subscribed(message.from_user.id, message.bot)
-    if not ok:
-        await send_clean(
-            message, state,
-            "Davom etish uchun kanalga majburiy obuna bo‘ling:\nObuna bo‘lgach, 🔄 Tekshirish tugmasini bosing.",
-            reply_markup=sub_kb()
-        )
-        return
-
     await send_clean(
         message, state,
         f"{TEXTS['choose_ui_lang']['uz']} / {TEXTS['choose_ui_lang']['ru']}",
@@ -591,19 +541,20 @@ async def check_sub(call: types.CallbackQuery, state: FSMContext):
     await call.answer("✅ Obuna tasdiqlandi")
 
 
+# ✅ FIX: cleanup -> finish tartibi
 @dp.callback_query_handler(lambda c: c.data == "reg_cancel", state="*")
 async def reg_cancel(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
     data = await state.get_data()
-    ui_lang = data.get("ui_lang")
+    ui_lang = data.get("ui_lang", "uz")
+
+    # avval tozalash
+    await cleanup_bot_messages(call.bot, call.message.chat.id, state)
+
+    # keyin finish
     await state.finish()
 
-    if ui_lang in ("uz", "ru"):
-        txt = TEXTS["cancelled"][ui_lang]
-    else:
-        txt = TEXTS["cancelled"]["uz"] + "\n\n" + TEXTS["cancelled"]["ru"]
-
-    await cleanup_bot_messages(call.bot, call.message.chat.id, state)
+    txt = TEXTS["cancelled"].get(ui_lang, TEXTS["cancelled"]["uz"])
     try:
         await call.message.edit_text(txt, reply_markup=None)
     except Exception:
@@ -751,7 +702,6 @@ async def reg_pick_district(call: types.CallbackQuery, state: FSMContext):
         await edit_clean(call, state, tr(ui_lang, "schools_not_found"), reply_markup=None)
         return
 
-    # ✅ code -> name mapping
     school_map = {}
     for s in schools:
         code = str(s.get("code") or "")
@@ -774,7 +724,6 @@ async def reg_pick_school(call: types.CallbackQuery, state: FSMContext):
     school_map = data.get("school_map", {}) or {}
     school_name = school_map.get(school_code, school_code)
 
-    # ✅ API uchun code, UI uchun name
     await state.update_data(school_code=school_code, school_name=school_name)
 
     await edit_clean(
@@ -931,6 +880,7 @@ async def pick_pair(call: types.CallbackQuery, state: FSMContext):
     await Registration.verify.set()
 
 
+# ✅ FIX: endi confirm_kb callbacklari shu handlerga tushadi
 @dp.callback_query_handler(lambda c: c.data in ["reg_confirm", "reg_edit"], state=Registration.verify)
 async def reg_verify(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
@@ -948,16 +898,17 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
         await Registration.exam_lang.set()
         return
 
+    # reg_confirm
     await cleanup_bot_messages(call.bot, call.message.chat.id, state, except_ids={call.message.message_id})
     user_msg = await call.bot.send_message(call.message.chat.id, tr(ui_lang, "success"))
     await state.update_data(bot_msg_ids=[user_msg.message_id])
-    print(data)
+
     try:
         res = await register_user(
             bot_id=str(call.from_user.id),
             full_name=data["fio"],
             phone=data["phone"],
-            school_code=data["school_code"],  # ✅ APIga CODE ketadi
+            school_code=data["school_code"],
             first_subject_id=data["first_subject_id"],
             second_subject_id=data["second_subject_id"],
             password="1111",
