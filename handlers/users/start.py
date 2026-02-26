@@ -286,6 +286,7 @@ def ui_lang_kb():
 
 def confirm_kb(ui_lang: str):
     kb = InlineKeyboardMarkup(row_width=2)
+
     if ui_lang == "ru":
         edit = "✏️ Изменить"
         cancel = "❌ Отмена"
@@ -296,12 +297,53 @@ def confirm_kb(ui_lang: str):
         confirm = "✅ Tasdiqlash"
 
     kb.row(
-        InlineKeyboardButton(edit, callback_data="reg_edit"),
+        InlineKeyboardButton(edit, callback_data="reg_edit_menu"),
         InlineKeyboardButton(cancel, callback_data="reg_cancel"),
     )
-    kb.row(InlineKeyboardButton(confirm, callback_data="reg_confirm"))
+    kb.row(InlineKeyboardButton(confirm, callback_data="reg_confirm_1"))
     return kb
 
+def final_confirm_kb(ui_lang: str):
+    kb = InlineKeyboardMarkup(row_width=2)
+    if ui_lang == "ru":
+        yes = "✅ Да, отправить"
+        no = "✏️ Нет, исправить"
+        cancel = "❌ Отмена"
+    else:
+        yes = "✅ Ha, yuborish"
+        no = "✏️ Yo‘q, tahrirlash"
+        cancel = "❌ Bekor qilish"
+
+    kb.row(
+        InlineKeyboardButton(no, callback_data="reg_edit_menu"),
+        InlineKeyboardButton(cancel, callback_data="reg_cancel"),
+    )
+    kb.row(InlineKeyboardButton(yes, callback_data="reg_confirm_2"))
+    return kb
+
+def edit_menu_kb(ui_lang: str):
+    kb = InlineKeyboardMarkup(row_width=2)
+    if ui_lang == "ru":
+        kb.row(
+            InlineKeyboardButton("📞 Телефон", callback_data="edit:phone"),
+            InlineKeyboardButton("👤 ФИО", callback_data="edit:fio"),
+        )
+        kb.row(
+            InlineKeyboardButton("🗣 Язык экзамена", callback_data="edit:exam_lang"),
+            InlineKeyboardButton("📚 Предметы", callback_data="edit:subjects"),
+        )
+        kb.row(InlineKeyboardButton("⬅️ Назад", callback_data="edit:back_confirm"))
+    else:
+        kb.row(
+            InlineKeyboardButton("📞 Telefon", callback_data="edit:phone"),
+            InlineKeyboardButton("👤 FIO", callback_data="edit:fio"),
+        )
+        kb.row(
+            InlineKeyboardButton("🗣 Imtihon tili", callback_data="edit:exam_lang"),
+            InlineKeyboardButton("📚 Fanlar", callback_data="edit:subjects"),
+        )
+        kb.row(InlineKeyboardButton("⬅️ Orqaga", callback_data="edit:back_confirm"))
+    return kb
 
 def sub_kb():
     kb = InlineKeyboardMarkup(row_width=1)
@@ -924,6 +966,7 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
             district=data.get("district"),
             region=data.get("region"),
             group_name=data.get("class_letter"),
+            status=True,
         )
 
         if isinstance(res, dict) and res.get("ok"):

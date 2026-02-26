@@ -12,6 +12,7 @@ ADMIN_CHAT_ID = env.str("ADMIN_CHAT_ID")
 CHANNEL_USERNAME = env.str("CHANNEL_USERNAME")
 CHANNEL_LINK = env.str("CHANNEL_LINK")
 BASE_URL = env.str("BASE_URL")
+REDIS_URL = env.str("REDIS_URL")
 # SUBJECTS_MAP = {
 #     "Matematika": {
 #         "id": 20,
