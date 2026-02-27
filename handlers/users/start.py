@@ -25,6 +25,87 @@ FULL_NAME_RE = re.compile(
     r"^[A-Za-zА-Яа-яЎўҚқҒғҲҳЁёʻʼ'`\-\s]{5,}$",
     re.UNICODE
 )
+NAME_TOKEN_RE = re.compile(r"[A-Za-zА-Яа-яЎўҚқҒғҲҳЁёʻʼ`]+", re.UNICODE)
+
+# Familiya ko'pincha shunday tugaydi (RU/UZ amaliyot)
+SURNAME_SUFFIXES = (
+    "ov", "ev", "yov", "yev", "ova", "eva",
+    "skiy", "sky", "skaya", "ska", "ko", "enko",
+    "yan", "ian", "vich", "vna"  # otchestva bo'lishi mumkin, lekin yordam beradi
+)
+
+DROP_WORDS = {
+    "ogli", "o‘gli", "o'g'li", "oʻgʻli", "угли",
+    "qizi", "kizi", "қызы", "қизи", "кизи",
+    "оглы", "кызы"
+}
+
+def _smart_title_word(w: str) -> str:
+    w = (w or "").strip()
+    if not w:
+        return ""
+    return w[:1].upper() + w[1:].lower()
+
+def _looks_like_surname(token: str) -> bool:
+    t = (token or "").strip().lower()
+    if not t:
+        return False
+    # familiya suffix
+    if t.endswith(SURNAME_SUFFIXES):
+        return True
+    # -ova/-eva/-ov/-ev RU familiyalar juda ko'p
+    # shuningdek, O'zbekcha familiyalar ham ko'p shu tipda
+    return False
+
+def normalize_fio_to_surname_name(raw: str) -> Optional[str]:
+    """
+    User qanday yozmasin:
+      - 'Ism Familiya'
+      - 'Familiya Ism'
+      - 'Familiya Ism Otchestva'
+      - 'Ism Familiya ... qizi/ogli'
+    => 'Familiya Ism' qilib qaytaradi.
+    """
+    if not raw:
+        return None
+
+    s = re.sub(r"\s+", " ", str(raw).strip())
+    if not s:
+        return None
+
+    tokens = [t for t in NAME_TOKEN_RE.findall(s) if t]
+    if len(tokens) < 2:
+        return None
+
+    # DROP_WORDS kelgan joydan keyingi tokenlarni (masalan "Bahodir qizi") tashlaymiz
+    cleaned = []
+    for t in tokens:
+        tl = t.lower()
+        if tl in DROP_WORDS:
+            break
+        cleaned.append(t)
+
+    if len(cleaned) < 2:
+        # masalan: "Azizjonova qizi" kabi bo'lib qolsa
+        cleaned = tokens[:2]
+
+    # Endi 2 ta asosiy token
+    a, b = cleaned[0], cleaned[1]
+
+    # Heuristika: agar 2-token familiyaga o'xshasa, ehtimol user "Ism Familiya" yozgan
+    # Misol: "Ulugbek Erkinov" -> b = Erkinov (familiya), demak swap
+    if _looks_like_surname(b) and not _looks_like_surname(a):
+        surname, name = b, a
+    else:
+        surname, name = a, b
+
+    surname = _smart_title_word(surname)
+    name = _smart_title_word(name)
+
+    if len(surname) < 2 or len(name) < 2:
+        return None
+
+    return f"{surname} {name}"
 # ✅ BASE_URL noto'g'ri bo'lsa ham /api/v1 ni qo'shib olamiz (404 muammosi uchun)
 API_V1 = (BASE_URL or "").rstrip("/")
 if not API_V1.endswith("/api/v1"):
@@ -53,7 +134,7 @@ TEXTS = {
         "ru": "❌ Неверный номер.\nПример: 941234567 или +998941234567",
     },
 
-    "fio_ask": {"uz": "FIO kiriting:\nNamuna: Familiya Ism ", "ru": "Введите ФИО:\nПример: Фамилия Имя"},
+    "fio_ask": {"uz": "Familiya Ism kiriting:\nNamuna: Familiya Ism ", "ru": "Введите ФИО:\nПример: Фамилия Имя"},
     "fio_invalid_2words": {
         "uz": "❌ FIO xato.\nIltimos, Ism va Familiyani kiriting.\nMasalan: Erkinov Ulug‘bek",
         "ru": "❌ ФИО неверно.\nВведите Имя и Фамилию.\nПример: Erkinov Ulug‘bek",
@@ -520,14 +601,14 @@ async def is_subscribed(user_id: int, bot) -> bool:
 async def start_cmd(message: types.Message, state: FSMContext):
     await state.finish()
 
-    # ok = await is_subscribed(message.from_user.id, message.bot)
-    # if not ok:
-    #     await message.answer(
-    #         "📢 Botdan foydalanish uchun avval kanalga obuna bo‘ling:",
-    #         reply_markup=sub_kb(),
-    #         disable_web_page_preview=True
-    #     )
-    #     return
+    ok = await is_subscribed(message.from_user.id, message.bot)
+    if not ok:
+        await message.answer(
+            "📢 Botdan foydalanish uchun avval kanalga obuna bo‘ling:",
+            reply_markup=sub_kb(),
+            disable_web_page_preview=True
+        )
+        return
 
     await send_clean(
         message, state,
@@ -628,17 +709,17 @@ async def reg_fio(message: types.Message, state: FSMContext):
     data = await state.get_data()
     ui_lang = data.get("ui_lang", "uz")
 
-    fio = (message.text or "").strip()
-    parts = fio.split()
+    raw = (message.text or "").strip()
 
-    if len(parts) < 2 or len(parts) > 2:
+    fio_norm = normalize_fio_to_surname_name(raw)
+    if not fio_norm:
         return await send_clean(message, state, tr(ui_lang, "fio_invalid_2words"))
-    # if not FULL_NAME_RE.match(fio):
-    #     return await send_clean(message, state, tr(ui_lang, "fio_invalid_letters"))
-    if any(len(p) < 2 for p in parts):
-        return await send_clean(message, state, tr(ui_lang, "fio_too_short"))
 
-    await state.update_data(fio=fio)
+    # Xohlasangiz regex tekshiruvni normga qo'llang
+    # if not FULL_NAME_RE.match(fio_norm):
+    #     return await send_clean(message, state, tr(ui_lang, "fio_invalid_letters"))
+
+    await state.update_data(fio=fio_norm)
 
     await send_clean(message, state, tr(ui_lang, "ask_gender"), reply_markup=gender_kb(ui_lang))
     await Registration.gender.set()
