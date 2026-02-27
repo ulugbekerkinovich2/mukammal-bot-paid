@@ -3,7 +3,7 @@ from aiogram.dispatcher import FSMContext
 from aiogram.utils.exceptions import MessageNotModified
 
 from loader import dp
-from data.config import ADMIN_CHAT_ID
+from data.config import ADMIN_CHAT_IDs
 
 from states.adminStates import AdminPanel
 from keyboards.inline.admin_inline import (
@@ -43,7 +43,7 @@ def _parse_admin_ids(value) -> set:
     return out
 
 
-ADMIN_IDS = _parse_admin_ids(ADMIN_CHAT_ID)
+ADMIN_IDS = _parse_admin_ids(ADMIN_CHAT_IDs)
 
 
 def is_admin(user_id: int) -> bool:
