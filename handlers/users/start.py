@@ -53,14 +53,14 @@ TEXTS = {
         "ru": "❌ Неверный номер.\nПример: 941234567 или +998941234567",
     },
 
-    "fio_ask": {"uz": "FIO kiriting:\nNamuna: Ism Familiya", "ru": "Введите ФИО:\nПример: Имя Фамилия"},
+    "fio_ask": {"uz": "FIO kiriting:\nNamuna: Familiya Ism ", "ru": "Введите ФИО:\nПример: Фамилия Имя"},
     "fio_invalid_2words": {
-        "uz": "❌ FIO xato.\nIltimos, Ism va Familiyani kiriting.\nMasalan: Ulug‘bek Erkinov",
-        "ru": "❌ ФИО неверно.\nВведите Имя и Фамилию.\nПример: Ulug‘bek Erkinov",
+        "uz": "❌ FIO xato.\nIltimos, Ism va Familiyani kiriting.\nMasalan: Erkinov Ulug‘bek",
+        "ru": "❌ ФИО неверно.\nВведите Имя и Фамилию.\nПример: Erkinov Ulug‘bek",
     },
     "fio_invalid_letters": {
-        "uz": "❌ FIO faqat harflardan iborat bo‘lishi kerak.\nMasalan: Ulug‘bek Erkinov",
-        "ru": "❌ ФИО должно содержать только буквы.\nПример: Ulug‘bek Erkinov",
+        "uz": "❌ FIO faqat harflardan iborat bo‘lishi kerak.\nMasalan: Erkinov Ulug‘bek",
+        "ru": "❌ ФИО должно содержать только буквы.\nПример: Erkinov Ulug‘bek",
     },
     "fio_too_short": {
         "uz": "❌ Ism yoki familiya juda qisqa.\nQayta kiriting:",
