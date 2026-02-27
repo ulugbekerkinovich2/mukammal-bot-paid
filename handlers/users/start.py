@@ -520,14 +520,14 @@ async def is_subscribed(user_id: int, bot) -> bool:
 async def start_cmd(message: types.Message, state: FSMContext):
     await state.finish()
 
-    ok = await is_subscribed(message.from_user.id, message.bot)
-    if not ok:
-        await message.answer(
-            "📢 Botdan foydalanish uchun avval kanalga obuna bo‘ling:",
-            reply_markup=sub_kb(),
-            disable_web_page_preview=True
-        )
-        return
+    # ok = await is_subscribed(message.from_user.id, message.bot)
+    # if not ok:
+    #     await message.answer(
+    #         "📢 Botdan foydalanish uchun avval kanalga obuna bo‘ling:",
+    #         reply_markup=sub_kb(),
+    #         disable_web_page_preview=True
+    #     )
+    #     return
 
     await send_clean(
         message, state,

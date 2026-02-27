@@ -4,7 +4,8 @@ import asyncio
 import aiohttp
 import psycopg2
 from dotenv import load_dotenv
-
+from data.config import SECRET_KEY
+from urllib.parse import quote
 load_dotenv()
 
 # ====== CONFIG ======
@@ -242,32 +243,58 @@ async def add_chat_id(chat_id_user, first_name_user, last_name_user, pin, phone,
     }
     return await _request_json("POST", url, json_data=payload)
 
+from typing import Dict, Any, Optional
+from data.config import BASE_URL, SECRET_KEY
 
-# ====== Your existing fetch_* (kept, but cleaned to use _request_json) ======
-async def fetch_school_and_districts(region: str, district: str):
-    url = f"{BASE_URL}/admin/districts-and-schools"
-    return await _request_json("GET", url, params={"region": region, "district": district})
+# sizda bor funksiyangiz:
+# async def _request_json(method, url, headers=None, json=None, timeout_total=20, timeout_connect=7): ...
+
+
+def _build_url(path: str) -> str:
+    """
+    BASE_URL qaysi ko‘rinishda bo‘lishidan qat'i nazar, urlni to‘g‘ri yig‘adi.
+    """
+    base = (BASE_URL or "").rstrip("/")
+    p = (path or "").lstrip("/")
+
+    # BASE_URL /api/v1 bilan tugasa, dubl bo‘lib ketmasin
+    if base.endswith("/api/v1") and p.startswith("api/v1/"):
+        p = p[len("api/v1/"):]
+    if base.endswith("/api") and p.startswith("api/"):
+        p = p[len("api/"):]
+
+    return f"{base}/{p}"
+
+
+def _auth_headers(extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    headers: Dict[str, str] = {"accept": "application/json"}
+    api_key = (SECRET_KEY or "").strip()
+    if api_key:
+        headers["x-api-key"] = api_key
+    if extra:
+        headers.update(extra)
+    return headers
 
 
 async def fetch_districts():
-    url = f"{BASE_URL}/management/districts"
-    headers = {"Content-Type": "application/json", "x-api-key": os.getenv("SECRET_KEY", "")}
-    return await _request_json("GET", url, headers=headers, timeout_total=20, timeout_connect=7)
+    url = _build_url("/api/v1/management/districts")
+    print("REQUEST URL =", url)  # DEBUG (keyin olib tashlaysiz)
+    return await _request_json("GET", url, headers=_auth_headers(), timeout_total=20, timeout_connect=7)
 
 
 async def fetch_district_by_id(district_id: int):
-    url = f"{BASE_URL}/management/districts/{district_id}"
-    headers = {"Content-Type": "application/json", "x-api-key": os.getenv("SECRET_KEY", "")}
-    return await _request_json("GET", url, headers=headers, timeout_total=20, timeout_connect=7)
+    url = _build_url(f"/api/v1/management/districts/{district_id}")
+    print("REQUEST URL =", url)  # DEBUG
+    return await _request_json("GET", url, headers=_auth_headers(), timeout_total=20, timeout_connect=7)
 
 
 async def fetch_schools():
-    url = f"{BASE_URL}/management/schools"
-    headers = {"Content-Type": "application/json", "x-api-key": os.getenv("SECRET_KEY", "")}
-    return await _request_json("GET", url, headers=headers, timeout_total=20, timeout_connect=7)
+    url = _build_url("/api/v1/management/schools")
+    print("REQUEST URL =", url)  # DEBUG
+    return await _request_json("GET", url, headers=_auth_headers(), timeout_total=20, timeout_connect=7)
 
 
 async def fetch_school_by_id(school_id: int):
-    url = f"{BASE_URL}/management/schools/{school_id}"
-    headers = {"Content-Type": "application/json", "x-api-key": os.getenv("SECRET_KEY", "")}
-    return await _request_json("GET", url, headers=headers, timeout_total=20, timeout_connect=7)
+    url = _build_url(f"/api/v1/management/schools/{school_id}")
+    print("REQUEST URL =", url)  # DEBUG
+    return await _request_json("GET", url, headers=_auth_headers(), timeout_total=20, timeout_connect=7)
