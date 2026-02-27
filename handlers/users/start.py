@@ -528,7 +528,7 @@ async def start_cmd(message: types.Message, state: FSMContext):
             disable_web_page_preview=True
         )
         return
-        
+
     await send_clean(
         message, state,
         f"{TEXTS['choose_ui_lang']['uz']} / {TEXTS['choose_ui_lang']['ru']}",
@@ -631,10 +631,10 @@ async def reg_fio(message: types.Message, state: FSMContext):
     fio = (message.text or "").strip()
     parts = fio.split()
 
-    if len(parts) < 2:
+    if len(parts) < 2 or len(parts) > 2:
         return await send_clean(message, state, tr(ui_lang, "fio_invalid_2words"))
-    if not FULL_NAME_RE.match(fio):
-        return await send_clean(message, state, tr(ui_lang, "fio_invalid_letters"))
+    # if not FULL_NAME_RE.match(fio):
+    #     return await send_clean(message, state, tr(ui_lang, "fio_invalid_letters"))
     if any(len(p) < 2 for p in parts):
         return await send_clean(message, state, tr(ui_lang, "fio_too_short"))
 
