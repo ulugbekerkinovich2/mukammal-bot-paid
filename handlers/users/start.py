@@ -20,8 +20,11 @@ from data.config import ADMIN_CHAT_ID, CHANNEL_USERNAME, CHANNEL_LINK
 from data.config import BASE_URL
 
 PHONE_RE = re.compile(r"^\+?\d{9,15}$")
-FULL_NAME_RE = re.compile(r"^[A-Za-zА-Яа-яЎўҚқҒғҲҳЁёO‘o‘G‘g‘ʼ'\-\s]{5,}$")
-
+# FULL_NAME_RE = re.compile(r"^[A-Za-zА-Яа-яЎўҚқҒғҲҳЁёO‘o‘G‘g‘ʼ'\-\s]{5,}$")
+FULL_NAME_RE = re.compile(
+    r"^[A-Za-zА-Яа-яЎўҚқҒғҲҳЁёʻʼ'`\-\s]{5,}$",
+    re.UNICODE
+)
 # ✅ BASE_URL noto'g'ri bo'lsa ham /api/v1 ni qo'shib olamiz (404 muammosi uchun)
 API_V1 = (BASE_URL or "").rstrip("/")
 if not API_V1.endswith("/api/v1"):
