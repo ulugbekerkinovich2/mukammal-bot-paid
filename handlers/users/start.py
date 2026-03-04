@@ -605,14 +605,14 @@ async def is_subscribed(user_id: int, bot) -> bool:
 async def start_cmd(message: types.Message, state: FSMContext):
     await state.finish()
 
-    ok = await is_subscribed(message.from_user.id, message.bot)
-    if not ok:
-        await message.answer(
-            "📢 Botdan foydalanish uchun avval kanalga obuna bo‘ling:",
-            reply_markup=sub_kb(),
-            disable_web_page_preview=True
-        )
-        return
+    # ok = await is_subscribed(message.from_user.id, message.bot)
+    # if not ok:
+    #     await message.answer(
+    #         "📢 Botdan foydalanish uchun avval kanalga obuna bo‘ling:",
+    #         reply_markup=sub_kb(),
+    #         disable_web_page_preview=True
+    #     )
+    #     return
 
     await send_clean(
         message, state,
@@ -980,10 +980,14 @@ async def pick_pair(call: types.CallbackQuery, state: FSMContext):
 # ✅ FIX: endi confirm_kb callbacklari shu handlerga tushadi
 @dp.callback_query_handler(lambda c: c.data in ["reg_confirm", "reg_edit"], state=Registration.verify)
 async def reg_verify(call: types.CallbackQuery, state: FSMContext):
-    await call.answer()
-
     data = await state.get_data()
     ui_lang = data.get("ui_lang", "uz")
+
+    # Telegram 3s timeout bo'lmasin
+    try:
+        await call.answer()
+    except Exception:
+        pass
 
     # ========= EDIT =========
     if call.data == "reg_edit":
@@ -1000,55 +1004,47 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
     # ========= CONFIRM =========
     lock = USER_LOCKS[call.from_user.id]
 
-    # agar so'rov ketayotgan bo'lsa yangi yubormaymiz
+    # Agar so'rov ketayotgan bo'lsa — faqat toast
     if lock.locked():
-        await call.answer(
-            "⏳ Ro‘yxatdan o‘tkazyapman, kuting..."
-            if ui_lang == "uz"
-            else "⏳ Регистрирую, подождите...",
-            show_alert=False
-        )
+        try:
+            await call.answer(
+                "⏳ Ro‘yxatdan o‘tkazyapman, kuting..." if ui_lang == "uz"
+                else "⏳ Регистрирую, подождите...",
+                show_alert=False
+            )
+        except Exception:
+            pass
         return
 
     async with lock:
-
-        # inline keyboardni o‘chiramiz (double clickni to‘xtatadi)
+        # 1) Double clickni to'xtatish: faqat tugmalarni olib tashlaymiz
+        #    MATN (forma) O'ZGARMAYDI.
         try:
             await call.message.edit_reply_markup(reply_markup=None)
         except Exception:
             pass
 
-        # eski bot xabarlarini tozalaymiz
-        await cleanup_bot_messages(
-            call.bot,
-            call.message.chat.id,
-            state,
-            except_ids={call.message.message_id}
-        )
-
-        # loading message
+        # 2) Loadingni alohida message qilib yuboramiz (formani yo'qotmaymiz)
         loading_text = (
             "⏳ Ro‘yxatdan o‘tkazyapman, kuting..."
             if ui_lang == "uz"
             else "⏳ Регистрирую, подождите..."
         )
-
-        status_msg = await call.bot.send_message(
-            call.message.chat.id,
-            loading_text
-        )
-
-        await state.update_data(bot_msg_ids=[status_msg.message_id])
+        loading_msg = None
+        try:
+            loading_msg = await call.bot.send_message(call.message.chat.id, loading_text)
+        except Exception:
+            loading_msg = None
 
         try:
             # ========= API REQUEST =========
             res = await register_user(
                 bot_id=str(call.from_user.id),
-                full_name=data["fio"],
-                phone=data["phone"],
-                school_code=data["school_code"],
-                first_subject_id=data["first_subject_id"],
-                second_subject_id=data["second_subject_id"],
+                full_name=data.get("fio"),
+                phone=data.get("phone"),
+                school_code=data.get("school_code"),
+                first_subject_id=data.get("first_subject_id"),
+                second_subject_id=data.get("second_subject_id"),
                 password="1111",
                 language=data.get("exam_lang", "uz"),
                 gender=data.get("gender", "male"),
@@ -1059,15 +1055,17 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
             )
 
             # ========= SUCCESS =========
-            if isinstance(res, dict) and res.get("ok"):
+            if isinstance(res, dict) and res.get("ok") is True:
+                success_text = tr(ui_lang, "success")
 
-                try:
-                    await status_msg.edit_text(tr(ui_lang, "success"))
-                except Exception:
-                    await call.bot.send_message(
-                        call.message.chat.id,
-                        tr(ui_lang, "success")
-                    )
+                # loading msg ni successga aylantiramiz (yoki o'chirib tashlaymiz)
+                if loading_msg:
+                    try:
+                        await loading_msg.edit_text(success_text)
+                    except Exception:
+                        pass
+                else:
+                    await call.bot.send_message(call.message.chat.id, success_text)
 
                 admin_text = (
                     f"🧾 <b>REGISTER SUCCESS</b>\n"
@@ -1077,7 +1075,6 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
                     f"📝 <b>Full name:</b> {data.get('fio','-')}\n\n"
                     f"{build_register_details(data)}"
                 )
-
                 await notify_admins(call.bot, admin_text)
 
                 await state.finish()
@@ -1085,16 +1082,15 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
 
             # ========= API ERROR =========
             err_txt = res.get("text") if isinstance(res, dict) else str(res)
-
             user_err = pretty_register_error(str(err_txt), ui_lang=ui_lang)
 
-            try:
-                await status_msg.edit_text(user_err)
-            except Exception:
-                await call.bot.send_message(
-                    call.message.chat.id,
-                    user_err
-                )
+            if loading_msg:
+                try:
+                    await loading_msg.edit_text(user_err)
+                except Exception:
+                    await call.bot.send_message(call.message.chat.id, user_err)
+            else:
+                await call.bot.send_message(call.message.chat.id, user_err)
 
             admin_text = (
                 f"🧾 <b>REGISTER FAIL</b>\n"
@@ -1105,20 +1101,18 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
                 f"{build_register_details(data)}\n\n"
                 f"❗ <b>Error:</b>\n<code>{str(err_txt)[:1200]}</code>"
             )
-
             await notify_admins(call.bot, admin_text)
 
         except Exception as e:
-
             user_err = pretty_register_error(str(e), ui_lang=ui_lang)
 
-            try:
-                await status_msg.edit_text(user_err)
-            except Exception:
-                await call.bot.send_message(
-                    call.message.chat.id,
-                    user_err
-                )
+            if loading_msg:
+                try:
+                    await loading_msg.edit_text(user_err)
+                except Exception:
+                    await call.bot.send_message(call.message.chat.id, user_err)
+            else:
+                await call.bot.send_message(call.message.chat.id, user_err)
 
             admin_text = (
                 f"🧾 <b>REGISTER FAIL</b>\n"
@@ -1129,5 +1123,4 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
                 f"{build_register_details(data)}\n\n"
                 f"❗ <b>Exception:</b>\n<code>{str(e)[:1200]}</code>"
             )
-
             await notify_admins(call.bot, admin_text)
