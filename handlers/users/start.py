@@ -991,10 +991,13 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
         await Registration.exam_lang.set()
         return
 
-    # reg_confirm
+    # ✅ reg_confirm: faqat shu yerda so'rov ketadi
+    # confirm message'ni qoldiramiz, boshqa bot msg'larni tozalaymiz
     await cleanup_bot_messages(call.bot, call.message.chat.id, state, except_ids={call.message.message_id})
-    user_msg = await call.bot.send_message(call.message.chat.id, tr(ui_lang, "success"))
-    await state.update_data(bot_msg_ids=[user_msg.message_id])
+
+    loading_text = "⏳ Ro‘yxatdan o‘tkazyapman, kuting..." if ui_lang == "uz" else "⏳ Регистрирую, подождите..."
+    status_msg = await call.bot.send_message(call.message.chat.id, loading_text)
+    await state.update_data(bot_msg_ids=[status_msg.message_id])
 
     try:
         res = await register_user(
@@ -1013,7 +1016,13 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
             status=True,
         )
 
+        # ✅ OK
         if isinstance(res, dict) and res.get("ok"):
+            try:
+                await status_msg.edit_text(tr(ui_lang, "success"))
+            except Exception:
+                await call.bot.send_message(call.message.chat.id, tr(ui_lang, "success"))
+
             admin_text = (
                 f"🧾 <b>REGISTER SUCCESS</b>\n"
                 f"🕒 <b>Time:</b> {now_str()}\n"
@@ -1023,14 +1032,18 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
                 f"{build_register_details(data)}"
             )
             await notify_admins(call.bot, admin_text)
+
             await state.finish()
             return
 
+        # ❌ FAIL (API xato)
         err_txt = res.get("text") if isinstance(res, dict) else str(res)
+        user_err = pretty_register_error(str(err_txt), ui_lang=ui_lang)
+
         try:
-            await user_msg.edit_text(pretty_register_error(str(err_txt), ui_lang=ui_lang))
+            await status_msg.edit_text(user_err)
         except Exception:
-            await call.bot.send_message(call.message.chat.id, pretty_register_error(str(err_txt), ui_lang=ui_lang))
+            await call.bot.send_message(call.message.chat.id, user_err)
 
         admin_text = (
             f"🧾 <b>REGISTER FAIL</b>\n"
@@ -1044,10 +1057,12 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
         await notify_admins(call.bot, admin_text)
 
     except Exception as e:
+        user_err = pretty_register_error(str(e), ui_lang=ui_lang)
+
         try:
-            await user_msg.edit_text(pretty_register_error(str(e), ui_lang=ui_lang))
+            await status_msg.edit_text(user_err)
         except Exception:
-            await call.bot.send_message(call.message.chat.id, pretty_register_error(str(e), ui_lang=ui_lang))
+            await call.bot.send_message(call.message.chat.id, user_err)
 
         admin_text = (
             f"🧾 <b>REGISTER FAIL</b>\n"
