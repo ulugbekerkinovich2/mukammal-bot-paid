@@ -18,7 +18,11 @@ from keyboards.inline.user_inline import language_keyboard_button, gender_kb
 from utils.send_req import register_user
 from data.config import ADMIN_CHAT_ID, CHANNEL_USERNAME, CHANNEL_LINK
 from data.config import BASE_URL
+import asyncio
+from collections import defaultdict
 
+# har bir user uchun request lock
+USER_LOCKS = defaultdict(asyncio.Lock)
 PHONE_RE = re.compile(r"^\+?\d{9,15}$")
 # FULL_NAME_RE = re.compile(r"^[A-Za-zА-Яа-яЎўҚқҒғҲҳЁёO‘o‘G‘g‘ʼ'\-\s]{5,}$")
 FULL_NAME_RE = re.compile(
