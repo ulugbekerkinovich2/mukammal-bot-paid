@@ -977,9 +977,11 @@ async def pick_pair(call: types.CallbackQuery, state: FSMContext):
 @dp.callback_query_handler(lambda c: c.data in ["reg_confirm", "reg_edit"], state=Registration.verify)
 async def reg_verify(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
+
     data = await state.get_data()
     ui_lang = data.get("ui_lang", "uz")
 
+    # ========= EDIT =========
     if call.data == "reg_edit":
         msg = await call.bot.send_message(
             call.message.chat.id,
@@ -991,86 +993,137 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
         await Registration.exam_lang.set()
         return
 
-    # ✅ reg_confirm: faqat shu yerda so'rov ketadi
-    # confirm message'ni qoldiramiz, boshqa bot msg'larni tozalaymiz
-    await cleanup_bot_messages(call.bot, call.message.chat.id, state, except_ids={call.message.message_id})
+    # ========= CONFIRM =========
+    lock = USER_LOCKS[call.from_user.id]
 
-    loading_text = "⏳ Ro‘yxatdan o‘tkazyapman, kuting..." if ui_lang == "uz" else "⏳ Регистрирую, подождите..."
-    status_msg = await call.bot.send_message(call.message.chat.id, loading_text)
-    await state.update_data(bot_msg_ids=[status_msg.message_id])
+    # agar so'rov ketayotgan bo'lsa yangi yubormaymiz
+    if lock.locked():
+        await call.answer(
+            "⏳ Ro‘yxatdan o‘tkazyapman, kuting..."
+            if ui_lang == "uz"
+            else "⏳ Регистрирую, подождите...",
+            show_alert=False
+        )
+        return
 
-    try:
-        res = await register_user(
-            bot_id=str(call.from_user.id),
-            full_name=data["fio"],
-            phone=data["phone"],
-            school_code=data["school_code"],
-            first_subject_id=data["first_subject_id"],
-            second_subject_id=data["second_subject_id"],
-            password="1111",
-            language=data.get("exam_lang", "uz"),
-            gender=data.get("gender", "male"),
-            district=data.get("district"),
-            region=data.get("region"),
-            group_name=data.get("class_letter"),
-            status=True,
+    async with lock:
+
+        # inline keyboardni o‘chiramiz (double clickni to‘xtatadi)
+        try:
+            await call.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+
+        # eski bot xabarlarini tozalaymiz
+        await cleanup_bot_messages(
+            call.bot,
+            call.message.chat.id,
+            state,
+            except_ids={call.message.message_id}
         )
 
-        # ✅ OK
-        if isinstance(res, dict) and res.get("ok"):
+        # loading message
+        loading_text = (
+            "⏳ Ro‘yxatdan o‘tkazyapman, kuting..."
+            if ui_lang == "uz"
+            else "⏳ Регистрирую, подождите..."
+        )
+
+        status_msg = await call.bot.send_message(
+            call.message.chat.id,
+            loading_text
+        )
+
+        await state.update_data(bot_msg_ids=[status_msg.message_id])
+
+        try:
+            # ========= API REQUEST =========
+            res = await register_user(
+                bot_id=str(call.from_user.id),
+                full_name=data["fio"],
+                phone=data["phone"],
+                school_code=data["school_code"],
+                first_subject_id=data["first_subject_id"],
+                second_subject_id=data["second_subject_id"],
+                password="1111",
+                language=data.get("exam_lang", "uz"),
+                gender=data.get("gender", "male"),
+                district=data.get("district"),
+                region=data.get("region"),
+                group_name=data.get("class_letter"),
+                status=True,
+            )
+
+            # ========= SUCCESS =========
+            if isinstance(res, dict) and res.get("ok"):
+
+                try:
+                    await status_msg.edit_text(tr(ui_lang, "success"))
+                except Exception:
+                    await call.bot.send_message(
+                        call.message.chat.id,
+                        tr(ui_lang, "success")
+                    )
+
+                admin_text = (
+                    f"🧾 <b>REGISTER SUCCESS</b>\n"
+                    f"🕒 <b>Time:</b> {now_str()}\n"
+                    f"👤 <b>User:</b> {_tg_user_link(call.from_user)}\n"
+                    f"🆔 <b>Chat ID:</b> <code>{call.from_user.id}</code>\n"
+                    f"📝 <b>Full name:</b> {data.get('fio','-')}\n\n"
+                    f"{build_register_details(data)}"
+                )
+
+                await notify_admins(call.bot, admin_text)
+
+                await state.finish()
+                return
+
+            # ========= API ERROR =========
+            err_txt = res.get("text") if isinstance(res, dict) else str(res)
+
+            user_err = pretty_register_error(str(err_txt), ui_lang=ui_lang)
+
             try:
-                await status_msg.edit_text(tr(ui_lang, "success"))
+                await status_msg.edit_text(user_err)
             except Exception:
-                await call.bot.send_message(call.message.chat.id, tr(ui_lang, "success"))
+                await call.bot.send_message(
+                    call.message.chat.id,
+                    user_err
+                )
 
             admin_text = (
-                f"🧾 <b>REGISTER SUCCESS</b>\n"
+                f"🧾 <b>REGISTER FAIL</b>\n"
                 f"🕒 <b>Time:</b> {now_str()}\n"
                 f"👤 <b>User:</b> {_tg_user_link(call.from_user)}\n"
                 f"🆔 <b>Chat ID:</b> <code>{call.from_user.id}</code>\n"
                 f"📝 <b>Full name:</b> {data.get('fio','-')}\n\n"
-                f"{build_register_details(data)}"
+                f"{build_register_details(data)}\n\n"
+                f"❗ <b>Error:</b>\n<code>{str(err_txt)[:1200]}</code>"
             )
+
             await notify_admins(call.bot, admin_text)
 
-            await state.finish()
-            return
+        except Exception as e:
 
-        # ❌ FAIL (API xato)
-        err_txt = res.get("text") if isinstance(res, dict) else str(res)
-        user_err = pretty_register_error(str(err_txt), ui_lang=ui_lang)
+            user_err = pretty_register_error(str(e), ui_lang=ui_lang)
 
-        try:
-            await status_msg.edit_text(user_err)
-        except Exception:
-            await call.bot.send_message(call.message.chat.id, user_err)
+            try:
+                await status_msg.edit_text(user_err)
+            except Exception:
+                await call.bot.send_message(
+                    call.message.chat.id,
+                    user_err
+                )
 
-        admin_text = (
-            f"🧾 <b>REGISTER FAIL</b>\n"
-            f"🕒 <b>Time:</b> {now_str()}\n"
-            f"👤 <b>User:</b> {_tg_user_link(call.from_user)}\n"
-            f"🆔 <b>Chat ID:</b> <code>{call.from_user.id}</code>\n"
-            f"📝 <b>Full name:</b> {data.get('fio','-')}\n\n"
-            f"{build_register_details(data)}\n\n"
-            f"❗ <b>Error:</b>\n<code>{str(err_txt)[:1200]}</code>"
-        )
-        await notify_admins(call.bot, admin_text)
+            admin_text = (
+                f"🧾 <b>REGISTER FAIL</b>\n"
+                f"🕒 <b>Time:</b> {now_str()}\n"
+                f"👤 <b>User:</b> {_tg_user_link(call.from_user)}\n"
+                f"🆔 <b>Chat ID:</b> <code>{call.from_user.id}</code>\n"
+                f"📝 <b>Full name:</b> {data.get('fio','-')}\n\n"
+                f"{build_register_details(data)}\n\n"
+                f"❗ <b>Exception:</b>\n<code>{str(e)[:1200]}</code>"
+            )
 
-    except Exception as e:
-        user_err = pretty_register_error(str(e), ui_lang=ui_lang)
-
-        try:
-            await status_msg.edit_text(user_err)
-        except Exception:
-            await call.bot.send_message(call.message.chat.id, user_err)
-
-        admin_text = (
-            f"🧾 <b>REGISTER FAIL</b>\n"
-            f"🕒 <b>Time:</b> {now_str()}\n"
-            f"👤 <b>User:</b> {_tg_user_link(call.from_user)}\n"
-            f"🆔 <b>Chat ID:</b> <code>{call.from_user.id}</code>\n"
-            f"📝 <b>Full name:</b> {data.get('fio','-')}\n\n"
-            f"{build_register_details(data)}\n\n"
-            f"❗ <b>Exception:</b>\n<code>{str(e)[:1200]}</code>"
-        )
-        await notify_admins(call.bot, admin_text)
+            await notify_admins(call.bot, admin_text)
