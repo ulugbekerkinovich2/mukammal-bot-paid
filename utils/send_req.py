@@ -1,24 +1,63 @@
 from typing import Dict, Any, Optional
 import os
 import asyncio
+import random
 import aiohttp
 import psycopg2
 from dotenv import load_dotenv
-from data.config import SECRET_KEY
-from urllib.parse import quote
+from data.config import SECRET_KEY, BASE_URL
+from urllib.parse import quote  # (qolaversin, ishlatsang kerak bo‘ladi)
+
 load_dotenv()
 
-# ====== CONFIG ======
-MAIN_URL = "https://dtmpaperreaderapi.mentalaba.uz/api/v1/auth/register"
-BASE_URL = "https://dtmpaperreaderapi.mentalaba.uz/api/v1"
+# =========================
+# CONFIG (ENDPOINTS)
+# =========================
+MAIN_URL = os.getenv("REGISTER_URL", "https://dtmpaperreaderapi.mentalaba.uz/api/v1/auth/register").strip()
+BASE_API_URL = os.getenv("BASE_URL", "https://dtmpaperreaderapi.mentalaba.uz/api/v1").strip()
 
-ADS_BOTS = "https://ads.misterdev.uz/bots/get"
-ADS_USERS = "https://ads.misterdev.uz/users/get"
-ADS_USERS_POST = "https://ads.misterdev.uz/users/post"
-ADS_USERS_PUT = "https://ads.misterdev.uz/users/put/{id}"
+ADS_BOTS = os.getenv("ADS_BOTS", "https://ads.misterdev.uz/bots/get").strip()
+ADS_USERS = os.getenv("ADS_USERS", "https://ads.misterdev.uz/users/get").strip()
+ADS_USERS_POST = os.getenv("ADS_USERS_POST", "https://ads.misterdev.uz/users/post").strip()
+ADS_USERS_PUT = os.getenv("ADS_USERS_PUT", "https://ads.misterdev.uz/users/put/{id}").strip()
+
+# =========================
+# TIMEOUT PROFILES
+# =========================
+# Register backend sekin bo‘lishi mumkin: 180-300s
+REGISTER_TIMEOUT_SEC = int(os.getenv("REGISTER_TIMEOUT_SEC", "300"))   # 5 min default
+REGISTER_CONNECT_SEC = int(os.getenv("REGISTER_CONNECT_SEC", "30"))
+REGISTER_RETRIES = int(os.getenv("REGISTER_RETRIES", "2"))
+
+# Oddiy GET/ADS lar uchun kichik timeout
+DEFAULT_TIMEOUT_SEC = int(os.getenv("DEFAULT_TIMEOUT_SEC", "25"))
+DEFAULT_CONNECT_SEC = int(os.getenv("DEFAULT_CONNECT_SEC", "7"))
+DEFAULT_RETRIES = int(os.getenv("DEFAULT_RETRIES", "2"))
+
+# Retry backoff
+RETRY_BASE_SLEEP = float(os.getenv("RETRY_BASE_SLEEP", "1.2"))  # sekund
+RETRY_JITTER = float(os.getenv("RETRY_JITTER", "0.35"))         # random qo‘shimcha
 
 
-# ====== COMMON HTTP ======
+# =========================
+# COMMON HTTP
+# =========================
+def _make_timeout(total: int, connect: int) -> aiohttp.ClientTimeout:
+    """
+    aiohttp timeoutlar:
+      - total: umumiy limit
+      - connect: TCP connect uchun
+      - sock_connect: socket connect uchun
+      - sock_read: server javob oqimini o‘qish uchun (eng muhim)
+    """
+    return aiohttp.ClientTimeout(
+        total=total,
+        connect=connect,
+        sock_connect=connect,
+        sock_read=total,
+    )
+
+
 async def _request_json(
     method: str,
     url: str,
@@ -26,14 +65,14 @@ async def _request_json(
     params: Optional[Dict[str, Any]] = None,
     json_data: Optional[Dict[str, Any]] = None,
     headers: Optional[Dict[str, str]] = None,
-    timeout_total: int = 25,
-    timeout_connect: int = 7,
-    retries: int = 2,
+    timeout_total: int = DEFAULT_TIMEOUT_SEC,
+    timeout_connect: int = DEFAULT_CONNECT_SEC,
+    retries: int = DEFAULT_RETRIES,
 ) -> Dict[str, Any]:
-    timeout = aiohttp.ClientTimeout(total=timeout_total, connect=timeout_connect)
+    timeout = _make_timeout(timeout_total, timeout_connect)
     last_err = ""
 
-    for _ in range(retries + 1):
+    for attempt in range(retries + 1):
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.request(
@@ -44,14 +83,18 @@ async def _request_json(
                     headers=headers,
                 ) as r:
                     text = await r.text()
+
+                    # JSON parse
                     try:
                         data = await r.json()
                     except Exception:
                         data = None
 
+                    # HTTP error
                     if r.status >= 400:
                         return {"ok": False, "status": r.status, "text": text, "data": data}
 
+                    # OK
                     if isinstance(data, dict):
                         data.setdefault("ok", True)
                         data.setdefault("status", r.status)
@@ -59,13 +102,25 @@ async def _request_json(
 
                     return {"ok": True, "status": r.status, "data": data, "text": text}
 
-        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-            last_err = repr(e)
+        except asyncio.TimeoutError as e:
+            last_err = f"TimeoutError(): {repr(e)}"
+        except aiohttp.ClientError as e:
+            last_err = f"ClientError(): {repr(e)}"
+        except Exception as e:
+            last_err = f"Exception(): {repr(e)}"
+
+        # retry sleep (backoff + jitter)
+        if attempt < retries:
+            backoff = RETRY_BASE_SLEEP * (attempt + 1)
+            jitter = random.random() * RETRY_JITTER
+            await asyncio.sleep(backoff + jitter)
 
     return {"ok": False, "status": 0, "text": f"Network error after retries: {last_err}", "data": None}
 
 
-# ====== REGISTER (NO QUEUE) ======
+# =========================
+# REGISTER
+# =========================
 class RegisterError(Exception):
     pass
 
@@ -86,7 +141,7 @@ def _register_payload(
     status: bool = True,
 ) -> Dict[str, Any]:
     return {
-        "bot_id": str(bot_id),  # ⚠️ bu yerda endi HARD-CODE YO‘Q
+        "bot_id": str(bot_id),
         "full_name": full_name,
         "phone": phone,
         "school_code": school_code,
@@ -116,10 +171,15 @@ async def register_user(
     district: str = "",
     region: str = "",
     group_name: str = "",
-    retries: int = 2,
+    retries: int = REGISTER_RETRIES,
     status: bool = True,
 ) -> Dict[str, Any]:
-
+    """
+    Register uchun timeout katta:
+      - total: REGISTER_TIMEOUT_SEC (default 300s)
+      - connect: REGISTER_CONNECT_SEC (default 30s)
+      - sock_read: total bilan teng (server sekin javob bersa ham kutadi)
+    """
     payload = _register_payload(
         bot_id=bot_id,
         full_name=full_name,
@@ -139,6 +199,7 @@ async def register_user(
     print("\n========== REGISTER REQUEST ==========")
     print("URL:", MAIN_URL)
     print("PAYLOAD:", payload)
+    print("TIMEOUT:", REGISTER_TIMEOUT_SEC, "CONNECT:", REGISTER_CONNECT_SEC, "RETRIES:", retries)
     print("======================================\n")
 
     res = await _request_json(
@@ -147,6 +208,8 @@ async def register_user(
         json_data=payload,
         headers={"Content-Type": "application/json"},
         retries=retries,
+        timeout_total=REGISTER_TIMEOUT_SEC,
+        timeout_connect=REGISTER_CONNECT_SEC,
     )
 
     print("\n========== REGISTER RESPONSE ==========")
@@ -156,8 +219,9 @@ async def register_user(
     return res
 
 
-
-# ====== ADS (NO HttpClient, NO Queue) ======
+# =========================
+# ADS
+# =========================
 async def get_all_bots() -> Dict[str, Any]:
     return await _request_json("GET", ADS_BOTS)
 
@@ -198,7 +262,9 @@ async def update_user(id, chat_id, firstname, lastname, bot_id, username, status
     return await _request_json("PUT", url, json_data=payload)
 
 
-# ====== DB (sync psycopg2) ======
+# =========================
+# DB (sync psycopg2)
+# =========================
 def update_user_status(chat_id, bot_id, status="blocked"):
     conn = psycopg2.connect(
         host=os.getenv("db_host"),
@@ -223,7 +289,9 @@ def update_user_status(chat_id, bot_id, status="blocked"):
         conn.close()
 
 
-# ====== global.misterdev.uz (unchanged) ======
+# =========================
+# global.misterdev.uz (unchanged)
+# =========================
 async def get_user(user_chat_id, uni_id):
     url = f"https://global.misterdev.uz/detail-user-profile/{user_chat_id}/{uni_id}/"
     return await _request_json("GET", url)
@@ -243,13 +311,10 @@ async def add_chat_id(chat_id_user, first_name_user, last_name_user, pin, phone,
     }
     return await _request_json("POST", url, json_data=payload)
 
-from typing import Dict, Any, Optional
-from data.config import BASE_URL, SECRET_KEY
 
-# sizda bor funksiyangiz:
-# async def _request_json(method, url, headers=None, json=None, timeout_total=20, timeout_connect=7): ...
-
-
+# =========================
+# Management endpoints (BASE_URL + SECRET_KEY)
+# =========================
 def _build_url(path: str) -> str:
     """
     BASE_URL qaysi ko‘rinishda bo‘lishidan qat'i nazar, urlni to‘g‘ri yig‘adi.
@@ -262,7 +327,6 @@ def _build_url(path: str) -> str:
         p = p[len("api/v1/"):]
     if base.endswith("/api") and p.startswith("api/"):
         p = p[len("api/"):]
-
     return f"{base}/{p}"
 
 
@@ -278,23 +342,19 @@ def _auth_headers(extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
 
 async def fetch_districts():
     url = _build_url("/api/v1/management/districts")
-    print("REQUEST URL =", url)  # DEBUG (keyin olib tashlaysiz)
-    return await _request_json("GET", url, headers=_auth_headers(), timeout_total=20, timeout_connect=7)
+    return await _request_json("GET", url, headers=_auth_headers(), timeout_total=DEFAULT_TIMEOUT_SEC, timeout_connect=DEFAULT_CONNECT_SEC)
 
 
 async def fetch_district_by_id(district_id: int):
     url = _build_url(f"/api/v1/management/districts/{district_id}")
-    print("REQUEST URL =", url)  # DEBUG
-    return await _request_json("GET", url, headers=_auth_headers(), timeout_total=20, timeout_connect=7)
+    return await _request_json("GET", url, headers=_auth_headers(), timeout_total=DEFAULT_TIMEOUT_SEC, timeout_connect=DEFAULT_CONNECT_SEC)
 
 
 async def fetch_schools():
     url = _build_url("/api/v1/management/schools")
-    print("REQUEST URL =", url)  # DEBUG
-    return await _request_json("GET", url, headers=_auth_headers(), timeout_total=20, timeout_connect=7)
+    return await _request_json("GET", url, headers=_auth_headers(), timeout_total=DEFAULT_TIMEOUT_SEC, timeout_connect=DEFAULT_CONNECT_SEC)
 
 
 async def fetch_school_by_id(school_id: int):
     url = _build_url(f"/api/v1/management/schools/{school_id}")
-    print("REQUEST URL =", url)  # DEBUG
-    return await _request_json("GET", url, headers=_auth_headers(), timeout_total=20, timeout_connect=7)
+    return await _request_json("GET", url, headers=_auth_headers(), timeout_total=DEFAULT_TIMEOUT_SEC, timeout_connect=DEFAULT_CONNECT_SEC)
