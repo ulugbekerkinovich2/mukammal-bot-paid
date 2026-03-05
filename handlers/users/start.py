@@ -20,7 +20,13 @@ from data.config import ADMIN_CHAT_ID, CHANNEL_USERNAME, CHANNEL_LINK
 from data.config import BASE_URL
 import asyncio
 from collections import defaultdict
+import logging
 
+logger = logging.getLogger("registration_bot")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s"
+)
 # har bir user uchun request lock
 USER_LOCKS = defaultdict(asyncio.Lock)
 PHONE_RE = re.compile(r"^\+?\d{9,15}$")
@@ -316,17 +322,40 @@ async def edit_clean(call: types.CallbackQuery, state: FSMContext, text: str, re
 # ----------------------------
 # API calls
 # ----------------------------
+import asyncio
+import aiohttp
 async def _api_get(url: str, params: Dict[str, str]) -> Dict[str, Any]:
-    timeout = aiohttp.ClientTimeout(total=25)
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        async with session.get(url, params=params) as r:
-            text = await r.text()
-            if r.status >= 400:
-                return {"ok": False, "status": r.status, "text": text}
-            try:
-                return await r.json()
-            except Exception:
-                return {"ok": False, "status": r.status, "text": text}
+    timeout = aiohttp.ClientTimeout(total=60)
+
+    logger.info(f"API REQUEST -> {url} params={params}")
+
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url, params=params) as r:
+
+                logger.info(f"API RESPONSE STATUS -> {r.status}")
+
+                text = await r.text()
+
+                if r.status >= 400:
+                    logger.error(f"API ERROR -> {text[:500]}")
+                    return {"ok": False, "status": r.status, "text": text}
+
+                try:
+                    data = await r.json()
+                    logger.info("API JSON parsed successfully")
+                    return data
+                except Exception:
+                    logger.error("API JSON parse error")
+                    return {"ok": False, "status": r.status, "text": text}
+
+    except asyncio.TimeoutError:
+        logger.error(f"API TIMEOUT -> {url}")
+        return {"ok": False, "status": 504, "text": "TimeoutError"}
+
+    except aiohttp.ClientError as e:
+        logger.error(f"NETWORK ERROR -> {repr(e)}")
+        return {"ok": False, "status": 503, "text": str(e)}
 
 
 async def fetch_regions() -> Dict[str, Any]:
@@ -729,32 +758,38 @@ async def reg_fio(message: types.Message, state: FSMContext):
     await Registration.gender.set()
 
 
+import asyncio
 @dp.callback_query_handler(lambda c: c.data and c.data.startswith("gender:"), state=Registration.gender)
 async def reg_gender_cb(call: types.CallbackQuery, state: FSMContext):
+
+    logger.info(f"GENDER CLICK -> user_id={call.from_user.id} data={call.data}")
+
     data = await state.get_data()
     ui_lang = data.get("ui_lang", "uz")
 
     gender = call.data.split(":", 1)[1]
-    if gender not in ("male", "female"):
-        await call.answer(tr(ui_lang, "gender_invalid"), show_alert=True)
-        return
+
+    logger.info(f"USER GENDER SELECTED -> {gender}")
 
     await state.update_data(gender=gender)
 
+    logger.info("FETCHING REGIONS FROM API")
+
     res = await fetch_regions()
+
+    logger.info(f"FETCH_REGIONS RESULT -> {res}")
+
     if not (isinstance(res, dict) and res.get("ok")):
+        logger.error("REGIONS FETCH FAILED")
         await edit_clean(call, state, pretty_register_error(str(res), ui_lang), reply_markup=None)
         return
 
     regions = res.get("regions") or []
-    if not regions:
-        await edit_clean(call, state, tr(ui_lang, "regions_not_found"), reply_markup=None)
-        return
+
+    logger.info(f"REGIONS COUNT -> {len(regions)}")
 
     await edit_clean(call, state, tr(ui_lang, "region_ask"), reply_markup=regions_kb(ui_lang, regions))
     await Registration.region.set()
-    await call.answer()
-
 
 @dp.callback_query_handler(lambda c: c.data.startswith("reg_region:"), state=Registration.region)
 async def reg_pick_region(call: types.CallbackQuery, state: FSMContext):
