@@ -3,6 +3,8 @@ from aiogram.types import Message, ReplyKeyboardRemove, KeyboardButton,ReplyKeyb
 # from keyboards.default.registerKeyBoardButton import menu, menu_full, application, ask_delete_account,exit_from_account, update_personal_info,finish_edit,update_education_info
 # from keyboards.inline.menukeyboards import update_personal_info_inline,edit_user_education_inline,edit_user_education_transfer_inline
 import datetime
+import html
+import io
 import re
 import time
 from keyboards.default.userKeyboard import keyboard_user, adminKeyboard_user
@@ -24,16 +26,58 @@ import asyncio
 from keyboards.default.adminMenuKeyBoardButton import adminMenu
 from data.config import ADMINS
 
+
+def _is_admin(message_user_id: int) -> bool:
+    return str(message_user_id) in ADMINS
+
+
+def _guess_image_content_type(filename: str, mime_type: str = "") -> str:
+    mime = (mime_type or "").lower()
+    if mime in {"image/jpeg", "image/jpg", "image/png"}:
+        return "image/jpeg" if mime == "image/jpg" else mime
+
+    lower_name = (filename or "").lower()
+    if lower_name.endswith(".png"):
+        return "image/png"
+    return "image/jpeg"
+
+
+async def _send_dtm_read_result(message: types.Message, payload: dict):
+    upload_image = html.escape(str(payload.get("upload_image", "-")))
+    pdf_file = html.escape(str(payload.get("pdf_file", "-")))
+    total_point = payload.get("total_point", "-")
+    updated_answers = payload.get("updated_answers", "-")
+    total_detected = payload.get("total_detected", "-")
+    book_id = payload.get("book_id", "-")
+    detail_point = payload.get("detail_point") or {}
+    image_link = f'<a href="{upload_image}">Rasmni ochish</a>' if upload_image.startswith("http") else upload_image
+    pdf_link = f'<a href="{pdf_file}">PDFni ochish</a>' if pdf_file.startswith("http") else pdf_file
+
+    summary = (
+        "✅ <b>DTM natija tayyor</b>\n\n"
+        f"🆔 <b>Book ID:</b> <code>{book_id}</code>\n"
+        f"📊 <b>Umumiy ball:</b> <code>{total_point}</code>\n\n"
+        "📈 <b>Ball tafsiloti</b>\n"
+        f"Majburiy: <code>{detail_point.get('mandatory', '-')}</code> | "
+        f"Asosiy: <code>{detail_point.get('primary', '-')}</code> | "
+        f"Ikkinchi fan: <code>{detail_point.get('secondary', '-')}</code>\n\n"
+        "📌 <b>Statistika</b>\n"
+        f"Yangilangan: <code>{updated_answers}</code> | "
+        f"Aniqlangan: <code>{total_detected}</code>\n\n"
+        f"🔗 {image_link} | {pdf_link}"
+    )
+    await message.answer(summary, reply_markup=adminMenu, disable_web_page_preview=True)
+
 @dp.message_handler(Text(equals='📊 Admin Panel'), state='*')
 async def admin_command(message: types.Message, state: FSMContext):
     print(message.from_user.id)
-    if str(message.from_user.id) not in ADMINS:
+    if not _is_admin(message.from_user.id):
         return
     await message.answer("📊 Admin Panel", reply_markup=adminMenu)
 
 @dp.message_handler(Text(equals='📢 Reklama yuborish'), state='*')
 async def admin_commandAds(message: types.Message, state: FSMContext):
-    if str(message.from_user.id) not in ADMINS:
+    if not _is_admin(message.from_user.id):
         return
     await state.finish()
     await message.answer(
@@ -45,7 +89,7 @@ async def admin_commandAds(message: types.Message, state: FSMContext):
 # Post linkini qabul qilish
 @dp.message_handler(state=NewAdsState.post_url)
 async def get_post_url(message: types.Message, state: FSMContext):
-    if str(message.from_user.id) not in ADMINS:
+    if not _is_admin(message.from_user.id):
         return
 
     post_url = message.text.strip()
@@ -122,9 +166,117 @@ async def send_post_to_users(callback_query: types.CallbackQuery, state: FSMCont
     await state.finish()
 
 
+@dp.message_handler(Text(equals='🧠 DTM javoblarni o‘qish'), state='*')
+async def start_dtm_read(message: types.Message, state: FSMContext):
+    if not _is_admin(message.from_user.id):
+        return
+
+    await state.finish()
+    await message.answer(
+        "Rasmni yuboring. Foto yoki image document bo‘lishi mumkin.",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+    await NewAdsState.dtm_read_image.set()
+
+
+@dp.message_handler(content_types=[types.ContentType.PHOTO, types.ContentType.DOCUMENT], state=NewAdsState.dtm_read_image)
+async def get_dtm_read_image(message: types.Message, state: FSMContext):
+    if not _is_admin(message.from_user.id):
+        return
+
+    file_id = None
+    filename = "sheet.jpg"
+    mime_type = "image/jpeg"
+
+    if message.photo:
+        file_id = message.photo[-1].file_id
+    elif message.document:
+        mime_type = (message.document.mime_type or "").lower()
+        if not mime_type.startswith("image/"):
+            await message.answer("Faqat rasm yuboring.", reply_markup=adminMenu)
+            await state.finish()
+            return
+        file_id = message.document.file_id
+        if message.document.file_name:
+            filename = message.document.file_name
+
+    if not file_id:
+        await message.answer("Rasm topilmadi. Qayta yuboring.")
+        return
+
+    await state.update_data(
+        dtm_file_id=file_id,
+        dtm_filename=filename,
+        dtm_content_type=_guess_image_content_type(filename, mime_type),
+    )
+    await message.answer("Endi `book_id` ni yuboring. Faqat raqam bo‘lsin.", parse_mode="Markdown")
+    await NewAdsState.dtm_read_book_id.set()
+
+
+@dp.message_handler(state=NewAdsState.dtm_read_image)
+async def invalid_dtm_read_image(message: types.Message, state: FSMContext):
+    if not _is_admin(message.from_user.id):
+        return
+    await message.answer("Avval rasm yuboring.")
+
+
+@dp.message_handler(state=NewAdsState.dtm_read_book_id)
+async def submit_dtm_read_request(message: types.Message, state: FSMContext):
+    if not _is_admin(message.from_user.id):
+        return
+
+    book_id = (message.text or "").strip()
+    if not book_id.isdigit():
+        await message.answer("`book_id` faqat son bo‘lishi kerak.", parse_mode="Markdown")
+        return
+
+    data = await state.get_data()
+    file_id = data.get("dtm_file_id")
+    filename = data.get("dtm_filename") or "sheet.jpg"
+    content_type = data.get("dtm_content_type") or _guess_image_content_type(filename)
+    if not file_id:
+        await message.answer("Rasm topilmadi. Qaytadan boshlang.", reply_markup=adminMenu)
+        await state.finish()
+        return
+
+    await message.answer("⏳ API ga yuboryapman, biroz kuting...")
+
+    telegram_file = await bot.get_file(file_id)
+    file_buffer = io.BytesIO()
+    await bot.download_file(telegram_file.file_path, destination=file_buffer)
+    image_bytes = file_buffer.getvalue()
+
+    res = await send_req.submit_dtm_read(
+        image_bytes=image_bytes,
+        filename=filename,
+        book_id=book_id,
+        content_type=content_type,
+    )
+
+    if not res.get("ok"):
+        err_text = str(res.get("text", "Noma'lum xato"))[:3000]
+        await message.answer(
+            f"❌ API xato\n\nStatus: <code>{res.get('status')}</code>\n<code>{err_text}</code>",
+            reply_markup=adminMenu,
+        )
+        await state.finish()
+        return
+
+    payload = res.get("data")
+    if not isinstance(payload, dict):
+        await message.answer("❌ API noto‘g‘ri format qaytardi.", reply_markup=adminMenu)
+        await state.finish()
+        return
+
+    await _send_dtm_read_result(message, payload)
+    await state.finish()
+
+
 
 @dp.message_handler(text="📊 Statistika")  # Assuming you have a function or logic to check if the user is an admin
 async def bot_starts(message: types.Message, state: FSMContext):
+    if not _is_admin(message.from_user.id):
+        return
     await state.finish()
     time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     count_of_users = send_req.get_all_users()

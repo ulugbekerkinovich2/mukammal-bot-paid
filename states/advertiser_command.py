@@ -26,3 +26,5 @@ class GranState(StatesGroup):
 class NewAdsState(StatesGroup):
     post_url = State()
     confirm_post = State()
+    dtm_read_image = State()
+    dtm_read_book_id = State()

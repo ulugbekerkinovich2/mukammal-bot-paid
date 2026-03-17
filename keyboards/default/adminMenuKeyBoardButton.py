@@ -7,6 +7,9 @@ adminMenu = ReplyKeyboardMarkup(
             KeyboardButton(text='📊 Statistika'),
         ],
         [
+            KeyboardButton(text='🧠 DTM javoblarni o‘qish'),
+        ],
+        [
             # KeyboardButton(text='⚙️ Sozlamalar'),
             KeyboardButton(text='🔙 Orqaga')
         ],

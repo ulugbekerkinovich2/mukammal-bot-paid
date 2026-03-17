@@ -20,6 +20,7 @@ ADS_BOTS = os.getenv("ADS_BOTS", "https://ads.misterdev.uz/bots/get").strip()
 ADS_USERS = os.getenv("ADS_USERS", "https://ads.misterdev.uz/users/get").strip()
 ADS_USERS_POST = os.getenv("ADS_USERS_POST", "https://ads.misterdev.uz/users/post").strip()
 ADS_USERS_PUT = os.getenv("ADS_USERS_PUT", "https://ads.misterdev.uz/users/put/{id}").strip()
+DTM_READ_URL = os.getenv("DTM_READ_URL", "https://dtmpaperreaderapi.mentalaba.uz/api/v1/dtm/read").strip()
 
 # =========================
 # TIMEOUT PROFILES
@@ -358,3 +359,60 @@ async def fetch_schools():
 async def fetch_school_by_id(school_id: int):
     url = _build_url(f"/api/v1/management/schools/{school_id}")
     return await _request_json("GET", url, headers=_auth_headers(), timeout_total=DEFAULT_TIMEOUT_SEC, timeout_connect=DEFAULT_CONNECT_SEC)
+
+
+def _detect_image_content_type(image_bytes: bytes, fallback: str = "image/jpeg") -> str:
+    if image_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if image_bytes.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    return fallback or "image/jpeg"
+
+
+def _normalize_image_filename(filename: str, content_type: str) -> str:
+    name = (filename or "sheet").strip() or "sheet"
+    lower_name = name.lower()
+    if content_type == "image/png" and not lower_name.endswith(".png"):
+        return f"{name}.png"
+    if content_type == "image/jpeg" and not (lower_name.endswith(".jpg") or lower_name.endswith(".jpeg")):
+        return f"{name}.jpg"
+    return name
+
+
+async def submit_dtm_read(image_bytes: bytes, filename: str, book_id: str, content_type: str = "image/jpeg") -> Dict[str, Any]:
+    actual_content_type = _detect_image_content_type(image_bytes, content_type)
+    actual_filename = _normalize_image_filename(filename, actual_content_type)
+    timeout = _make_timeout(REGISTER_TIMEOUT_SEC, REGISTER_CONNECT_SEC)
+    form = aiohttp.FormData()
+    form.add_field(
+        "file",
+        image_bytes,
+        filename=actual_filename,
+        content_type=actual_content_type,
+    )
+    form.add_field("book_id", str(book_id))
+
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(DTM_READ_URL, data=form, headers=_auth_headers()) as r:
+                text = await r.text()
+                try:
+                    data = await r.json()
+                except Exception:
+                    data = None
+
+                if r.status >= 400:
+                    return {"ok": False, "status": r.status, "text": text, "data": data}
+
+                return {
+                    "ok": True,
+                    "status": r.status,
+                    "data": data,
+                    "text": text,
+                }
+    except asyncio.TimeoutError as e:
+        return {"ok": False, "status": 0, "text": f"TimeoutError(): {repr(e)}", "data": None}
+    except aiohttp.ClientError as e:
+        return {"ok": False, "status": 0, "text": f"ClientError(): {repr(e)}", "data": None}
+    except Exception as e:
+        return {"ok": False, "status": 0, "text": f"Exception(): {repr(e)}", "data": None}
