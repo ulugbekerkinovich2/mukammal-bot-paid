@@ -61,7 +61,7 @@ FULL_NAME_RE = re.compile(
     r"^[A-Za-zА-Яа-яЎўҚқҒғҲҳЁёʻʼ'`\-\s]{5,}$",
     re.UNICODE
 )
-NAME_TOKEN_RE = re.compile(r"[A-Za-zА-Яа-яЎўҚқҒғҲҳЁёʻʼ`]+", re.UNICODE)
+NAME_TOKEN_RE = re.compile(r"[A-Za-zА-Яа-яЎўҚқҒғҲҳЁёʻʼ`\'‘’‘]+", re.UNICODE)
 
 # Familiya ko'pincha shunday tugaydi (RU/UZ amaliyot)
 SURNAME_SUFFIXES = (
