@@ -9,6 +9,7 @@ from typing import Dict, Any, List, Optional, Set
 import aiohttp
 from aiogram import types
 from aiogram.dispatcher import FSMContext
+from aiogram.dispatcher.filters import Text
 from aiogram.dispatcher.filters.builtin import CommandStart
 from aiogram.types import ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton
 
@@ -18,7 +19,7 @@ from states.userStates import Registration
 from data.config import SUBJECTS_MAP
 from keyboards.inline.user_inline import language_keyboard_button, gender_kb
 
-from utils.send_req import register_user
+from utils.send_req import register_user, get_dtm_result
 from data.config import ADMIN_CHAT_ID, CHANNEL_USERNAME, CHANNEL_LINK
 from data.config import BASE_URL
 
@@ -569,8 +570,10 @@ async def ensure_register_workers(bot, workers: int = 2):
 # ----------------------------
 # Keyboards
 # ----------------------------
-def ui_lang_kb():
+def ui_lang_kb(show_result_btn=False):
     kb = InlineKeyboardMarkup(row_width=2)
+    if show_result_btn:
+        kb.row(InlineKeyboardButton("📊 Mening natijam", callback_data="show_my_result_callback"))
     kb.row(
         InlineKeyboardButton("🇺🇿 O‘zbekcha", callback_data="ui:uz"),
         InlineKeyboardButton("🇷🇺 Русский", callback_data="ui:ru"),
@@ -802,10 +805,14 @@ async def start_cmd(message: types.Message, state: FSMContext):
     # Queue workerlarni ishga tushiramiz (1 marta)
     await ensure_register_workers(message.bot, workers=2)
 
+    # Check for results
+    res = await get_dtm_result(message.from_user.id)
+    show_btn = res and res.get("ok") and res.get("data")
+
     await send_clean(
         message, state,
         f"{TEXTS['choose_ui_lang']['uz']} / {TEXTS['choose_ui_lang']['ru']}",
-        reply_markup=ui_lang_kb()
+        reply_markup=ui_lang_kb(show_result_btn=bool(show_btn))
     )
     await Registration.ui_lang.set()
 
@@ -816,13 +823,24 @@ async def check_sub(call: types.CallbackQuery, state: FSMContext):
         await call.answer("Hali obuna emassiz. Avval obuna bo‘ling ✅", show_alert=True)
         return
 
+    # Check for results
+    res = await get_dtm_result(call.from_user.id)
+    show_btn = res and res.get("ok") and res.get("data")
+
     await edit_clean(
         call, state,
         f"{TEXTS['choose_ui_lang']['uz']} / {TEXTS['choose_ui_lang']['ru']}",
-        reply_markup=ui_lang_kb()
+        reply_markup=ui_lang_kb(show_result_btn=bool(show_btn))
     )
     await Registration.ui_lang.set()
     await call.answer("✅ Obuna tasdiqlandi")
+
+
+@dp.callback_query_handler(lambda c: c.data == "show_my_result_callback", state="*")
+async def show_my_result_callback(call: types.CallbackQuery, state: FSMContext):
+    await call.answer()
+    # Call the message handler logic
+    await show_my_result(call.message, state)
 
 @dp.callback_query_handler(lambda c: c.data == "reg_cancel", state="*")
 async def reg_cancel(call: types.CallbackQuery, state: FSMContext):
@@ -1343,3 +1361,63 @@ async def reg_job_check(call: types.CallbackQuery, state: FSMContext):
         await call.message.edit_text(txt, reply_markup=register_status_kb(ui_lang, job_id))
     except Exception:
         await call.bot.send_message(call.message.chat.id, txt, reply_markup=register_status_kb(ui_lang, job_id))
+# =========================
+# Result Lookup by chat_id
+# =========================
+def format_dtm_result(data):
+    full_name = data.get('full_name', 'Noma\'lum')
+    total_ball = data.get('total_ball', 0)
+    subjects = data.get('subjects', [])
+    
+    msg = f"👤 <b>F.I.SH:</b> {full_name}\n"
+    msg += f"📊 <b>Umumiy ball:</b> {total_ball}\n\n"
+    
+    msg += "📖 <b>Fanlar bo'yicha natijalar:</b>\n"
+    for s in subjects:
+        msg += f"🔹 <b>{s.get('name')}:</b>\n"
+        msg += f"   ✅ To'g'ri: {s.get('correct')}/{s.get('allocated')}\n"
+        msg += f"   📈 Ball: {s.get('score')} ({s.get('percent')}%)\n"
+    
+    return msg
+
+@dp.message_handler(Text(equals="📊 Mening natijam"), state="*")
+async def show_my_result(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    
+    msg = await message.answer("⏳ Natijangizni qidiryapman, biroz kuting...")
+    
+    try:
+        # Get result from API
+        res = await get_dtm_result(user_id)
+        
+        if not res or not res.get("ok"):
+            await message.answer("❌ Sizning natijangiz hali tayyor emas yoki kiritilmagan.")
+            try: await msg.delete()
+            except: pass
+            return
+
+        data = res.get("data")
+        if not data:
+            await message.answer("❌ Natija ma'lumotlari topilmadi.")
+            try: await msg.delete()
+            except: pass
+            return
+
+        formatted_text = format_dtm_result(data)
+        file_url = data.get("file_url")
+        
+        kb = None
+        if file_url:
+            kb = InlineKeyboardMarkup().add(
+                InlineKeyboardButton("📄 PDF Natijani yuklash", url=file_url)
+            )
+
+        await message.answer(formatted_text, reply_markup=kb, parse_mode="HTML")
+        try: await msg.delete()
+        except: pass
+        
+    except Exception as e:
+        logger.error(f"Error in show_my_result: {e}")
+        await message.answer("❌ Natijani yuklashda texnik xatolik yuz berdi.")
+        try: await msg.delete()
+        except: pass

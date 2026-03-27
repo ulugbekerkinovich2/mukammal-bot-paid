@@ -290,6 +290,38 @@ def update_user_status(chat_id, bot_id, status="blocked"):
         conn.close()
 
 
+def get_user_file_url(chat_id):
+    """
+    Userning oxirgi file_url sini bazadan olib beradi.
+    """
+    conn = psycopg2.connect(
+        host=os.getenv("db_host"),
+        database=os.getenv("db_name"),
+        user=os.getenv("db_user"),
+        password=os.getenv("db_pass"),
+        port=os.getenv("db_port"),
+    )
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT file_url FROM users
+                    WHERE chat_id = %s
+                    ORDER BY id DESC
+                    LIMIT 1
+                    """,
+                    (str(chat_id),),
+                )
+                row = cur.fetchone()
+                return row[0] if row else None
+    except Exception as e:
+        print(f"DATABASE GET_FILE_URL ERROR => {e}")
+        return None
+    finally:
+        conn.close()
+
+
 # =========================
 # global.misterdev.uz (unchanged)
 # =========================
@@ -416,3 +448,21 @@ async def submit_dtm_read(image_bytes: bytes, filename: str, book_id: str, conte
         return {"ok": False, "status": 0, "text": f"ClientError(): {repr(e)}", "data": None}
     except Exception as e:
         return {"ok": False, "status": 0, "text": f"Exception(): {repr(e)}", "data": None}
+
+
+async def get_dtm_result(document_code):
+    """
+    Yangi API orqali natijani olib beradi.
+    GET /api/v1/dtm/result/{document_code}
+    """
+    from data.config import BASE_URL
+    import os
+    import aiohttp
+    
+    secret_key = os.getenv("SECRET_KEY", "K0yKC4LYBnCNLncjE5BH57i13yZIBhaT")
+    url = f"{BASE_URL}/dtm/result/{document_code}"
+    headers = {
+        "X-Secret-Key": secret_key
+    }
+    
+    return await _request_json("GET", url, headers=headers)

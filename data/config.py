@@ -15,6 +15,7 @@ CHANNEL_LINK = env.str("CHANNEL_LINK")
 BASE_URL = env.str("BASE_URL")
 REDIS_URL = env.str("REDIS_URL")
 SECRET_KEY = env.str("SECRET_KEY")
+RESULTS_FILE_PATH = env.str("RESULTS_FILE_PATH", "data/natijalar.xlsx")
 # SUBJECTS_MAP = {
 #     "Matematika": {
 #         "id": 20,
