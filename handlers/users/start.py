@@ -1408,8 +1408,8 @@ async def show_my_result(message: types.Message, state: FSMContext):
             except: pass
             return
 
-        data = res.get("data")
-        if not data:
+        data = res.get("data") or res
+        if not data or (isinstance(data, dict) and not data.get("full_name") and not data.get("subjects")):
             await message.answer("❌ Natija ma'lumotlari topilmadi.")
             try: await msg.delete()
             except: pass
