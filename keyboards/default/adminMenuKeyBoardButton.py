@@ -8,6 +8,7 @@ adminMenu = ReplyKeyboardMarkup(
         ],
         [
             KeyboardButton(text='🧠 DTM javoblarni o‘qish'),
+            KeyboardButton(text='📊 Mening natijam'),
         ],
         [
             # KeyboardButton(text='⚙️ Sozlamalar'),
@@ -44,6 +45,7 @@ adminConfirm = ReplyKeyboardMarkup(
 adminKeyboard_user = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton("📊 Admin Panel")],
+        [KeyboardButton("📊 Mening natijam")],
         [KeyboardButton("📞Raqamni yuborish", request_contact=True)]
     ],
     resize_keyboard=True

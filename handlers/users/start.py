@@ -9,7 +9,7 @@ from typing import Dict, Any, List, Optional, Set
 import aiohttp
 from aiogram import types
 from aiogram.dispatcher import FSMContext
-from aiogram.dispatcher.filters import Text
+from aiogram.dispatcher.filters import Text, Command
 from aiogram.dispatcher.filters.builtin import CommandStart
 from aiogram.types import ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton
 
@@ -1393,6 +1393,7 @@ def format_dtm_result(data):
     
     return msg
 
+@dp.message_handler(Command("natija"), state="*")
 @dp.message_handler(Text(equals="📊 Mening natijam"), state="*")
 async def show_my_result(message: types.Message, state: FSMContext):
     await state.finish()
