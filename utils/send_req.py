@@ -460,7 +460,7 @@ async def get_dtm_result(document_code):
     import aiohttp
     
     secret_key = os.getenv("SECRET_KEY", "K0yKC4LYBnCNLncjE5BH57i13yZIBhaT")
-    url = f"{BASE_URL}/dtm/result/{document_code}"
+    url = f"{BASE_URL}/dtm/result/by_chat/{document_code}"
     headers = {
         "x-api-key": secret_key,
         "accept": "application/json"
