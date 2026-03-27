@@ -1381,7 +1381,12 @@ def format_dtm_result(data):
     full_name = data.get('full_name', 'Noma\'lum')
     total_ball = data.get('total_ball', 0)
     subjects = data.get('subjects', [])
-    
+
+    # Natija hali chiqmagan bo'lsa (hammasi 0 bo'lsa) None qaytaramiz
+    has_score = any(int(s.get('correct', 0)) > 0 for s in subjects) or float(total_ball) > 0
+    if not has_score:
+        return None
+
     msg = f"👤 <b>F.I.SH:</b> {full_name}\n"
     msg += f"📊 <b>Umumiy ball:</b> {total_ball}\n\n"
     
@@ -1412,13 +1417,14 @@ async def show_my_result(message: types.Message, state: FSMContext):
             return
 
         data = res.get("data") or res
-        if not data or (isinstance(data, dict) and not data.get("full_name") and not data.get("subjects")):
-            await message.answer("❌ Natija ma'lumotlari topilmadi.")
+        formatted_text = format_dtm_result(data)
+        
+        if not formatted_text:
+            await message.answer("❌ Sizning natijangiz hali tayyor emas yoki kiritilmagan.")
             try: await msg.delete()
             except: pass
             return
-
-        formatted_text = format_dtm_result(data)
+        
         file_url = data.get("file_url")
         if file_url and "127.0.0.1:8000" in file_url:
             file_url = file_url.replace("http://127.0.0.1:8000", "https://dtmpaperreaderapi.mentalaba.uz")
