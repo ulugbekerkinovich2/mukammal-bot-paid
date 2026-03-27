@@ -851,6 +851,7 @@ async def check_sub(call: types.CallbackQuery, state: FSMContext):
 @dp.callback_query_handler(lambda c: c.data == "show_my_result_callback", state="*")
 async def show_my_result_callback(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
+    await state.finish()
     # Call the message handler logic
     await show_my_result(call.message, state)
 
@@ -1394,6 +1395,7 @@ def format_dtm_result(data):
 
 @dp.message_handler(Text(equals="📊 Mening natijam"), state="*")
 async def show_my_result(message: types.Message, state: FSMContext):
+    await state.finish()
     user_id = message.from_user.id
     
     msg = await message.answer("⏳ Natijangizni qidiryapman, biroz kuting...")
