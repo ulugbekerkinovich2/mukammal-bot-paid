@@ -197,11 +197,13 @@ async def register_user(
         status=status,
     )
 
-    print("\n========== REGISTER REQUEST ==========")
-    print("URL:", MAIN_URL)
-    print("PAYLOAD:", payload)
-    print("TIMEOUT:", REGISTER_TIMEOUT_SEC, "CONNECT:", REGISTER_CONNECT_SEC, "RETRIES:", retries)
-    print("======================================\n")
+    logger.info(
+        f"\n\n========== REGISTER REQUEST ==========\n"
+        f"URL: {MAIN_URL}\n"
+        f"PAYLOAD: {payload}\n"
+        f"TIMEOUT: {REGISTER_TIMEOUT_SEC} CONNECT: {REGISTER_CONNECT_SEC} RETRIES: {retries}\n"
+        f"======================================\n"
+    )
 
     res = await _request_json(
         "POST",
@@ -213,9 +215,11 @@ async def register_user(
         timeout_connect=REGISTER_CONNECT_SEC,
     )
 
-    print("\n========== REGISTER RESPONSE ==========")
-    print("RESPONSE:", res)
-    print("=======================================\n")
+    logger.info(
+        f"\n\n========== REGISTER RESPONSE ==========\n"
+        f"RESPONSE: {res}\n"
+        f"=======================================\n"
+    )
 
     return res
 
@@ -466,7 +470,21 @@ async def get_dtm_result(document_code):
         "accept": "application/json"
     }
     
-    return await _request_json("GET", url, headers=headers)
+    logger.info(
+        f"\n\n========== RESULT REQUEST ==========\n"
+        f"CHAT_ID: {document_code}\n"
+        f"URL: {url}\n"
+        f"====================================\n"
+    )
+    
+    res = await _request_json("GET", url, headers=headers)
+    
+    logger.info(
+        f"\n\n========== RESULT RESPONSE ==========\n"
+        f"RESPONSE: {res}\n"
+        f"=====================================\n"
+    )
+    return res
 
 
 def check_user_exists(chat_id):
