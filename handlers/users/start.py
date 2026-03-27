@@ -1417,6 +1417,8 @@ async def show_my_result(message: types.Message, state: FSMContext):
 
         formatted_text = format_dtm_result(data)
         file_url = data.get("file_url")
+        if file_url and "127.0.0.1:8000" in file_url:
+            file_url = file_url.replace("http://127.0.0.1:8000", "https://dtmpaperreaderapi.mentalaba.uz")
         
         kb = None
         if file_url:
