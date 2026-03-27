@@ -43,8 +43,17 @@ def _guess_image_content_type(filename: str, mime_type: str = "") -> str:
 
 
 async def _send_dtm_read_result(message: types.Message, payload: dict):
-    upload_image = html.escape(str(payload.get("upload_image", "-")))
-    pdf_file = html.escape(str(payload.get("pdf_file", "-")))
+    def fix_url(url):
+        if url and "127.0.0.1:8000" in str(url):
+            return str(url).replace("http://127.0.0.1:8000", "https://dtmpaperreaderapi.mentalaba.uz")
+        return url
+
+    upload_image_fixed = fix_url(payload.get("upload_image", "-"))
+    pdf_file_fixed = fix_url(payload.get("pdf_file", "-"))
+    
+    upload_image = html.escape(str(upload_image_fixed))
+    pdf_file = html.escape(str(pdf_file_fixed))
+    
     total_point = payload.get("total_point", "-")
     updated_answers = payload.get("updated_answers", "-")
     total_detected = payload.get("total_detected", "-")
