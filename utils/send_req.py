@@ -462,7 +462,8 @@ async def get_dtm_result(document_code):
     secret_key = os.getenv("SECRET_KEY", "K0yKC4LYBnCNLncjE5BH57i13yZIBhaT")
     url = f"{BASE_URL}/dtm/result/{document_code}"
     headers = {
-        "X-Secret-Key": secret_key
+        "x-api-key": secret_key,
+        "accept": "application/json"
     }
     
     return await _request_json("GET", url, headers=headers)
