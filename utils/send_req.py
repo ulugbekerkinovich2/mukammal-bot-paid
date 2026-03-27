@@ -466,3 +466,33 @@ async def get_dtm_result(document_code):
     }
     
     return await _request_json("GET", url, headers=headers)
+
+
+def check_user_exists(chat_id):
+    """
+    User bazada borligini tekshiradi.
+    """
+    import os
+    import psycopg2
+    db_name = os.getenv("db_name")
+    if db_name:
+        db_name = db_name.strip('"')
+    
+    try:
+        conn = psycopg2.connect(
+            host=os.getenv("db_host"),
+            database=db_name,
+            user=os.getenv("db_user"),
+            password=os.getenv("db_pass"),
+            port=os.getenv("db_port"),
+        )
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id FROM users WHERE chat_id = %s LIMIT 1", (str(chat_id),))
+                return cur.fetchone() is not None
+    except Exception as e:
+        print(f"DATABASE CHECK_USER ERROR => {e}")
+        return False
+    finally:
+        if 'conn' in locals() and conn:
+            conn.close()

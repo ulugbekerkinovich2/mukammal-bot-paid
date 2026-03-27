@@ -19,7 +19,7 @@ from states.userStates import Registration
 from data.config import SUBJECTS_MAP
 from keyboards.inline.user_inline import language_keyboard_button, gender_kb
 
-from utils.send_req import register_user, get_dtm_result
+from utils.send_req import register_user, get_dtm_result, check_user_exists
 from data.config import ADMIN_CHAT_ID, CHANNEL_USERNAME, CHANNEL_LINK
 from data.config import BASE_URL
 
@@ -804,6 +804,18 @@ async def start_cmd(message: types.Message, state: FSMContext):
 
     # Queue workerlarni ishga tushiramiz (1 marta)
     await ensure_register_workers(message.bot, workers=2)
+
+    # Check if already registered
+    if check_user_exists(message.from_user.id):
+        from data.config import ADMINS
+        from keyboards.default.userKeyboard import adminKeyboard_user
+        
+        reply_markup = adminKeyboard_user if str(message.from_user.id) in ADMINS else keyboard_user
+        await message.answer(
+            "Xush kelibsiz! Natijangizni quyidagi tugma orqali ko'rishingiz mumkin.",
+            reply_markup=reply_markup
+        )
+        return
 
     # Check for results
     res = await get_dtm_result(message.from_user.id)
