@@ -1,3 +1,4 @@
+import logging
 from typing import Dict, Any, Optional
 import os
 import asyncio
@@ -9,6 +10,8 @@ from data.config import SECRET_KEY, BASE_URL
 from urllib.parse import quote  # (qolaversin, ishlatsang kerak bo‘ladi)
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 # =========================
 # CONFIG (ENDPOINTS)
