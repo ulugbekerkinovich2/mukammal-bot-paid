@@ -805,7 +805,16 @@ async def start_cmd(message: types.Message, state: FSMContext):
     # Queue workerlarni ishga tushiramiz (1 marta)
     await ensure_register_workers(message.bot, workers=2)
 
-    # Check if already registered
+    # 1. Obunani tekshiramiz
+    is_sub = await is_subscribed(message.from_user.id, message.bot)
+    if not is_sub:
+        await message.answer(
+            "Botdan foydalanish uchun rasmiy kanalimizga a'zo bo'ling! ✅",
+            reply_markup=sub_kb()
+        )
+        return
+
+    # 2. Ro'yxatdan o'tganligini tekshiramiz
     if check_user_exists(message.from_user.id):
         from data.config import ADMINS
         from keyboards.default.userKeyboard import adminKeyboard_user
@@ -817,7 +826,7 @@ async def start_cmd(message: types.Message, state: FSMContext):
         )
         return
 
-    # Check for results
+    # 3. Natijasi bormi?
     res = await get_dtm_result(message.from_user.id)
     show_btn = res and res.get("ok") and res.get("data")
 
@@ -835,7 +844,24 @@ async def check_sub(call: types.CallbackQuery, state: FSMContext):
         await call.answer("Hali obuna emassiz. Avval obuna bo‘ling ✅", show_alert=True)
         return
 
-    # Check for results
+    await call.answer("✅ Obuna tasdiqlandi")
+    
+    # 1. Ro'yxatdan o'tganmi?
+    if check_user_exists(call.from_user.id):
+        from data.config import ADMINS
+        from keyboards.default.userKeyboard import adminKeyboard_user
+        reply_markup = adminKeyboard_user if str(call.from_user.id) in ADMINS else keyboard_user
+        
+        await call.message.delete()
+        await call.bot.send_message(
+            call.from_user.id,
+            "Xush kelibsiz! Natijangizni quyidagi tugma orqali ko'rishingiz mumkin.",
+            reply_markup=reply_markup
+        )
+        await state.finish()
+        return
+
+    # 2. Tilni tanlash
     res = await get_dtm_result(call.from_user.id)
     show_btn = res and res.get("ok") and res.get("data")
 
@@ -845,7 +871,6 @@ async def check_sub(call: types.CallbackQuery, state: FSMContext):
         reply_markup=ui_lang_kb(show_result_btn=bool(show_btn))
     )
     await Registration.ui_lang.set()
-    await call.answer("✅ Obuna tasdiqlandi")
 
 
 @dp.callback_query_handler(lambda c: c.data == "show_my_result_callback", state="*")
