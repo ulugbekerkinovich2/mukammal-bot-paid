@@ -42,6 +42,31 @@ def _guess_image_content_type(filename: str, mime_type: str = "") -> str:
     return "image/jpeg"
 
 
+def _extract_dtm_image_meta(message: types.Message):
+    file_id = None
+    filename = "sheet.jpg"
+    mime_type = "image/jpeg"
+
+    if message.photo:
+        file_id = message.photo[-1].file_id
+    elif message.document:
+        mime_type = (message.document.mime_type or "").lower()
+        if not mime_type.startswith("image/"):
+            return None
+        file_id = message.document.file_id
+        if message.document.file_name:
+            filename = message.document.file_name
+
+    if not file_id:
+        return None
+
+    return {
+        "dtm_file_id": file_id,
+        "dtm_filename": filename,
+        "dtm_content_type": _guess_image_content_type(filename, mime_type),
+    }
+
+
 async def _send_dtm_read_result(message: types.Message, payload: dict):
     def fix_url(url):
         if url and "127.0.0.1:8000" in str(url):
@@ -59,21 +84,20 @@ async def _send_dtm_read_result(message: types.Message, payload: dict):
     total_detected = payload.get("total_detected", "-")
     book_id = payload.get("book_id", "-")
     detail_point = payload.get("detail_point") or {}
-    image_link = f'<a href="{upload_image}">Rasmni ochish</a>' if upload_image.startswith("http") else upload_image
-    pdf_link = f'<a href="{pdf_file}">PDFni ochish</a>' if pdf_file.startswith("http") else pdf_file
-
     summary = (
         "✅ <b>DTM natija tayyor</b>\n\n"
-        f"🆔 <b>Book ID:</b> <code>{book_id}</code>\n"
-        f"📊 <b>Umumiy ball:</b> <code>{total_point}</code>\n\n"
+        f"🆔 <b>Book ID</b>\n<code>{book_id}</code>\n\n"
+        f"📊 <b>Umumiy ball</b>\n<code>{total_point}</code>\n\n"
         "📈 <b>Ball tafsiloti</b>\n"
-        f"Majburiy: <code>{detail_point.get('mandatory', '-')}</code> | "
-        f"Asosiy: <code>{detail_point.get('primary', '-')}</code> | "
+        f"Majburiy: <code>{detail_point.get('mandatory', '-')}</code>\n"
+        f"Asosiy: <code>{detail_point.get('primary', '-')}</code>\n"
         f"Ikkinchi fan: <code>{detail_point.get('secondary', '-')}</code>\n\n"
         "📌 <b>Statistika</b>\n"
-        f"Yangilangan: <code>{updated_answers}</code> | "
-        f"Aniqlangan: <code>{total_detected}</code>\n\n"
-        f"🔗 {image_link} | {pdf_link}"
+        f"Yangilangan javoblar: <code>{updated_answers}</code>\n"
+        f"Aniqlangan jami: <code>{total_detected}</code>\n\n"
+        "🔗 <b>Fayllar</b>\n"
+        f"Rasm: {upload_image}\n"
+        f"PDF: {pdf_file}"
     )
     await message.answer(summary, reply_markup=adminMenu, disable_web_page_preview=True)
 
@@ -188,36 +212,35 @@ async def start_dtm_read(message: types.Message, state: FSMContext):
     await NewAdsState.dtm_read_image.set()
 
 
+@dp.message_handler(content_types=[types.ContentType.PHOTO, types.ContentType.DOCUMENT], state='*')
+async def catch_admin_dtm_image_anytime(message: types.Message, state: FSMContext):
+    if not _is_admin(message.from_user.id):
+        return
+
+    meta = _extract_dtm_image_meta(message)
+    if not meta:
+        return
+
+    await state.update_data(**meta)
+    await message.answer(
+        "Rasm qabul qilindi. Endi `book_id` ni yuboring. Faqat raqam bo‘lsin.",
+        parse_mode="Markdown",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+    await NewAdsState.dtm_read_book_id.set()
+
+
 @dp.message_handler(content_types=[types.ContentType.PHOTO, types.ContentType.DOCUMENT], state=NewAdsState.dtm_read_image)
 async def get_dtm_read_image(message: types.Message, state: FSMContext):
     if not _is_admin(message.from_user.id):
         return
 
-    file_id = None
-    filename = "sheet.jpg"
-    mime_type = "image/jpeg"
-
-    if message.photo:
-        file_id = message.photo[-1].file_id
-    elif message.document:
-        mime_type = (message.document.mime_type or "").lower()
-        if not mime_type.startswith("image/"):
-            await message.answer("Faqat rasm yuboring.", reply_markup=adminMenu)
-            await state.finish()
-            return
-        file_id = message.document.file_id
-        if message.document.file_name:
-            filename = message.document.file_name
-
-    if not file_id:
+    meta = _extract_dtm_image_meta(message)
+    if not meta:
         await message.answer("Rasm topilmadi. Qayta yuboring.")
         return
 
-    await state.update_data(
-        dtm_file_id=file_id,
-        dtm_filename=filename,
-        dtm_content_type=_guess_image_content_type(filename, mime_type),
-    )
+    await state.update_data(**meta)
     await message.answer("Endi `book_id` ni yuboring. Faqat raqam bo‘lsin.", parse_mode="Markdown")
     await NewAdsState.dtm_read_book_id.set()
 
