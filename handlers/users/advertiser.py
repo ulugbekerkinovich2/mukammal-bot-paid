@@ -24,11 +24,34 @@ from keyboards.default import adminMenuKeyBoardButton
 from loader import dp, bot
 import asyncio
 from keyboards.default.adminMenuKeyBoardButton import adminMenu
-from data.config import ADMINS
+from data.config import ADMINS, ADMIN_CHAT_IDs
+
+
+def _parse_admin_ids(*values) -> set:
+    ids = set()
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, int):
+            ids.add(str(value))
+            continue
+        if isinstance(value, (list, tuple, set)):
+            for item in value:
+                s = str(item).strip()
+                if s:
+                    ids.add(s)
+            continue
+        s = str(value).strip()
+        if s:
+            ids.add(s)
+    return ids
+
+
+ADMIN_ACCESS_IDS = _parse_admin_ids(ADMINS, ADMIN_CHAT_IDs)
 
 
 def _is_admin(message_user_id: int) -> bool:
-    return str(message_user_id) in ADMINS
+    return str(message_user_id) in ADMIN_ACCESS_IDS
 
 
 def _guess_image_content_type(filename: str, mime_type: str = "") -> str:
@@ -84,10 +107,13 @@ async def _send_dtm_read_result(message: types.Message, payload: dict):
     total_detected = payload.get("total_detected", "-")
     book_id = payload.get("book_id", "-")
     detail_point = payload.get("detail_point") or {}
+    image_link = f'<a href="{upload_image}">Rasmni ochish</a>' if str(upload_image_fixed).startswith("http") else upload_image
+    pdf_link = f'<a href="{pdf_file}">PDFni ochish</a>' if str(pdf_file_fixed).startswith("http") else pdf_file
+
     summary = (
         "✅ <b>DTM natija tayyor</b>\n\n"
-        f"🆔 <b>Book ID</b>\n<code>{book_id}</code>\n\n"
-        f"📊 <b>Umumiy ball</b>\n<code>{total_point}</code>\n\n"
+        f"🆔 <b>Book ID:</b> <code>{book_id}</code>\n"
+        f"📊 <b>Umumiy ball:</b> <code>{total_point}</code>\n\n"
         "📈 <b>Ball tafsiloti</b>\n"
         f"Majburiy: <code>{detail_point.get('mandatory', '-')}</code>\n"
         f"Asosiy: <code>{detail_point.get('primary', '-')}</code>\n"
@@ -95,9 +121,7 @@ async def _send_dtm_read_result(message: types.Message, payload: dict):
         "📌 <b>Statistika</b>\n"
         f"Yangilangan javoblar: <code>{updated_answers}</code>\n"
         f"Aniqlangan jami: <code>{total_detected}</code>\n\n"
-        "🔗 <b>Fayllar</b>\n"
-        f"Rasm: {upload_image}\n"
-        f"PDF: {pdf_file}"
+        f"🔗 {image_link} | {pdf_link}"
     )
     await message.answer(summary, reply_markup=adminMenu, disable_web_page_preview=True)
 
@@ -333,9 +357,9 @@ async def admin_commandBack(message: types.Message, state: FSMContext):
     await state.finish()
     # ic('admin command')
     user_id = str( message.from_user.id)
-    if user_id not in ADMINS:
+    if not _is_admin(message.from_user.id):
         return
-    if user_id in ADMINS:
+    if _is_admin(message.from_user.id):
         await message.answer("Admin Reklama paneliga xush kelibsiz", reply_markup=adminKeyboard_user)
     else:
         await message.answer("Admin Reklama paneliga xush kelibsiz", reply_markup=keyboard_user)
