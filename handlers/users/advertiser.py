@@ -106,12 +106,15 @@ async def _send_dtm_read_result(message: types.Message, payload: dict):
     updated_answers = payload.get("updated_answers", "-")
     total_detected = payload.get("total_detected", "-")
     book_id = payload.get("book_id", "-")
+    full_name = html.escape(str(payload.get("full_name", "")).strip())
     detail_point = payload.get("detail_point") or {}
     image_link = f'<a href="{upload_image}">Rasmni ochish</a>' if str(upload_image_fixed).startswith("http") else upload_image
     pdf_link = f'<a href="{pdf_file}">PDFni ochish</a>' if str(pdf_file_fixed).startswith("http") else pdf_file
+    full_name_line = f"👤 <b>F.I.Sh:</b> <code>{full_name}</code>\n" if full_name else ""
 
     summary = (
         "✅ <b>DTM natija tayyor</b>\n\n"
+        f"{full_name_line}"
         f"🆔 <b>Book ID:</b> <code>{book_id}</code>\n"
         f"📊 <b>Umumiy ball:</b> <code>{total_point}</code>\n\n"
         "📈 <b>Ball tafsiloti</b>\n"
