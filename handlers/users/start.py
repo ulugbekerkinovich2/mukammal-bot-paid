@@ -749,11 +749,106 @@ def build_register_details(data: dict) -> str:
         f"🌍 <b>Region:</b> <code>{data.get('region','-')}</code>\n"
         f"🏙 <b>District:</b> <code>{data.get('district','-')}</code>\n"
         f"🏫 <b>School code:</b> <code>{data.get('school_code','-')}</code>\n"
-        f"🏷 <b>Class letter:</b> <code>{data.get('class_letter','-')}</code>\n"
-        f"🗣 <b>Exam lang:</b> <code>{data.get('exam_lang','-')}</code>\n"
+        f"🏷 <b>Class letter:</b> <code>{data.get('class_letter') or data.get('group_name') or '-'}</code>\n"
+        f"🗣 <b>Exam lang:</b> <code>{data.get('exam_lang') or data.get('language') or '-'}</code>\n"
         f"🚻 <b>Gender:</b> <code>{data.get('gender','-')}</code>\n"
         f"📚 <b>Subjects:</b> <code>{data.get('first_subject_id','-')}</code> + <code>{data.get('second_subject_id','-')}</code>"
     )
+
+
+def _register_identity_snapshot(data: dict) -> dict:
+    return {
+        "full_name": str(data.get("full_name") or data.get("fio") or "").strip(),
+        "phone": str(data.get("phone") or "").strip(),
+        "region": str(data.get("region") or "").strip(),
+        "district": str(data.get("district") or "").strip(),
+        "school_code": str(data.get("school_code") or "").strip(),
+        "group_name": str(data.get("group_name") or data.get("class_letter") or "").strip(),
+        "language": str(data.get("language") or data.get("exam_lang") or "").strip(),
+        "gender": str(data.get("gender") or "").strip(),
+        "first_subject_id": str(data.get("first_subject_id") or "").strip(),
+        "second_subject_id": str(data.get("second_subject_id") or "").strip(),
+    }
+
+
+def _identity_diff_lines(old_data: dict, new_data: dict) -> List[str]:
+    labels = {
+        "full_name": "F.I.SH",
+        "phone": "Telefon",
+        "region": "Viloyat",
+        "district": "Tuman",
+        "school_code": "Maktab kodi",
+        "group_name": "Sinf",
+    }
+    diffs: List[str] = []
+    old_snapshot = _register_identity_snapshot(old_data)
+    new_snapshot = _register_identity_snapshot(new_data)
+
+    for key, label in labels.items():
+        old_val = old_snapshot.get(key) or "-"
+        new_val = new_snapshot.get(key) or "-"
+        if old_val != new_val:
+            diffs.append(f"• <b>{label}:</b> <code>{old_val}</code> → <code>{new_val}</code>")
+    return diffs
+
+
+def _find_previous_success_for_user(user_id: int, current_job_id: str) -> Optional[dict]:
+    matches = []
+    for job_id, info in REGISTER_JOBS.items():
+        if job_id == current_job_id or not isinstance(info, dict):
+            continue
+        if info.get("status") != "success":
+            continue
+        if _safe_int(info.get("user_id")) != int(user_id):
+            continue
+        payload = info.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        matches.append((info.get("updated_at") or "", job_id, info))
+
+    if not matches:
+        return None
+
+    matches.sort(key=lambda x: x[0], reverse=True)
+    return matches[0][2]
+
+
+async def notify_account_reuse_if_needed(bot, user: types.User, current_job_id: str, current_payload: dict):
+    previous = _find_previous_success_for_user(user.id, current_job_id)
+    if not previous:
+        return
+
+    previous_payload = previous.get("payload") or {}
+    diff_lines = _identity_diff_lines(previous_payload, current_payload)
+    if not diff_lines:
+        return
+
+    prev_time = previous.get("updated_at", "-")
+    prev_job_id = next(
+        (
+            job_id for job_id, info in REGISTER_JOBS.items()
+            if info is previous
+        ),
+        "-",
+    )
+
+    alert_text = (
+        f"🚨 <b>ACCOUNT REUSE ALERT</b>\n"
+        f"🕒 <b>Time:</b> {now_str()}\n"
+        f"👤 <b>Telegram user:</b> {_tg_user_link(user)}\n"
+        f"🆔 <b>Chat ID:</b> <code>{user.id}</code>\n\n"
+        f"📌 <b>Oldingi muvaffaqiyatli register:</b>\n"
+        f"🧩 <b>Job ID:</b> <code>{prev_job_id}</code>\n"
+        f"🕒 <b>Vaqt:</b> <code>{prev_time}</code>\n"
+        f"{build_register_details(previous_payload)}\n"
+        f"📝 <b>Full name:</b> <code>{previous_payload.get('full_name','-')}</code>\n\n"
+        f"📌 <b>Hozirgi register:</b>\n"
+        f"🧩 <b>Job ID:</b> <code>{current_job_id}</code>\n"
+        f"{build_register_details(current_payload)}\n"
+        f"📝 <b>Full name:</b> <code>{current_payload.get('full_name','-')}</code>\n\n"
+        f"⚠️ <b>Farqlar:</b>\n" + "\n".join(diff_lines)
+    )
+    await notify_admins(bot, alert_text)
 
 def build_confirm_text(ui_lang: str, data: dict) -> str:
     exam_lang = data.get("exam_lang", "uz")
@@ -1371,7 +1466,16 @@ async def reg_job_check(call: types.CallbackQuery, state: FSMContext):
             f"👤 <b>User:</b> {_tg_user_link(call.from_user)}\n"
             f"🆔 <b>Chat ID:</b> <code>{call.from_user.id}</code>\n"
             f"🧩 <b>Job ID:</b> <code>{job_id}</code>\n"
+            f"📝 <b>Full name:</b> <code>{(info.get('payload') or {}).get('full_name','-')}</code>\n\n"
+            f"{build_register_details(info.get('payload') or {})}"
         ))
+
+        await notify_account_reuse_if_needed(
+            call.bot,
+            call.from_user,
+            job_id,
+            info.get("payload") or {},
+        )
 
         await state.finish()
         return
