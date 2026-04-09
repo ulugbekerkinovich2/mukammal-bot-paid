@@ -47,6 +47,7 @@ CERTIFICATE_GUIDE_CAPTION = (
     "to‘ldiring va sertifikatingizni yuklab oling.</blockquote>"
 )
 QUEUE_STATS_INTERVAL_SEC = int(os.getenv("QUEUE_STATS_INTERVAL_SEC", "3600"))
+FAILED_RETRY_SWEEP_INTERVAL_SEC = int(os.getenv("FAILED_RETRY_SWEEP_INTERVAL_SEC", "600"))
 
 # =========================
 # Queue (BOT-side) + JSON persistence
@@ -69,6 +70,7 @@ USER_LAST_JOB: Dict[int, str] = {}              # user_id -> job_id
 REGISTER_WORKERS_STARTED = False
 REGISTER_WORKERS: List[asyncio.Task] = []
 QUEUE_STATS_TASK: Optional[asyncio.Task] = None
+FAILED_RETRY_SWEEP_TASK: Optional[asyncio.Task] = None
 CERTIFICATE_GUIDE_FILE_ID: Optional[str] = None
 
 # har bir user uchun request lock
@@ -509,6 +511,81 @@ async def requeue_pending_jobs() -> int:
         logger.info(f"[JOBS] requeued {n} jobs from JSON")
     return n
 
+
+def should_retry_register_with_status_false(err_text: str) -> bool:
+    err = str(err_text or "").lower()
+    if not err:
+        return False
+
+    pdf_failure_markers = (
+        "pdf generation failed",
+        "after-page images",
+        "after page images",
+        "topilmadi",
+    )
+    return any(marker in err for marker in pdf_failure_markers)
+
+
+async def retry_register_with_status_false(payload: Dict[str, Any]) -> Dict[str, Any]:
+    retry_payload = dict(payload or {})
+    retry_payload["status"] = False
+    return await register_user(**retry_payload)
+
+
+async def requeue_failed_status_false_jobs(limit: int = 25) -> int:
+    requeued = 0
+
+    for job_id, info in list(REGISTER_JOBS.items()):
+        if requeued >= limit:
+            break
+        if not isinstance(info, dict):
+            continue
+        if str(info.get("status") or "").lower() != "failed":
+            continue
+
+        err_txt = str(info.get("error") or info.get("original_error") or "")
+        if not should_retry_register_with_status_false(err_txt):
+            continue
+
+        payload = info.get("payload")
+        if not isinstance(payload, dict):
+            continue
+
+        if str(payload.get("status")).lower() == "false":
+            retry_payload = dict(payload)
+        else:
+            retry_payload = dict(payload)
+            retry_payload["status"] = False
+
+        try:
+            REGISTER_QUEUE.put_nowait(
+                RegisterJob(
+                    job_id=job_id,
+                    user_id=_safe_int(info.get("user_id")),
+                    chat_id=_safe_int(info.get("chat_id")),
+                    ui_lang=info.get("ui_lang") or "uz",
+                    payload=retry_payload,
+                )
+            )
+        except asyncio.QueueFull:
+            logger.warning("[QUEUE] failed-retry sweep stopped: queue full")
+            break
+
+        info.update({
+            "status": "queued",
+            "payload": retry_payload,
+            "updated_at": now_str(),
+            "note": "requeued_failed_pdf_with_status_false",
+            "auto_retry_count": int(info.get("auto_retry_count") or 0) + 1,
+            "retry_with_status_false": True,
+        })
+        await persist_job_update(job_id)
+        requeued += 1
+
+    if requeued:
+        logger.info(f"[QUEUE] requeued {requeued} failed jobs with status=False")
+    return requeued
+
 # ----------------------------
 # Queue workers
 # ----------------------------
@@ -544,13 +621,47 @@ async def _register_worker(worker_idx: int, bot):
                 logger.info(f"[QUEUE] job success job_id={job.job_id}")
             else:
                 err_txt = res.get("text") if isinstance(res, dict) else str(res)
-                REGISTER_JOBS[job.job_id].update({
-                    "status": "failed",
-                    "error": str(err_txt),
-                    "updated_at": now_str(),
-                })
-                await persist_job_update(job.job_id)
-                logger.error(f"[QUEUE] job failed job_id={job.job_id} err={str(err_txt)[:200]}")
+                if should_retry_register_with_status_false(err_txt) and job.payload.get("status", True) is not False:
+                    logger.warning(
+                        f"[QUEUE] retry with status=False job_id={job.job_id} err={str(err_txt)[:200]}"
+                    )
+                    retry_res = await retry_register_with_status_false(job.payload)
+
+                    if isinstance(retry_res, dict) and retry_res.get("ok") is True:
+                        REGISTER_JOBS[job.job_id].update({
+                            "status": "success",
+                            "result": retry_res,
+                            "updated_at": now_str(),
+                            "note": "success_after_status_false_retry",
+                            "retry_with_status_false": True,
+                            "original_error": str(err_txt),
+                        })
+                        await persist_job_update(job.job_id)
+                        logger.info(
+                            f"[QUEUE] job success after status=False retry job_id={job.job_id}"
+                        )
+                    else:
+                        retry_err_txt = retry_res.get("text") if isinstance(retry_res, dict) else str(retry_res)
+                        REGISTER_JOBS[job.job_id].update({
+                            "status": "failed",
+                            "error": str(retry_err_txt),
+                            "updated_at": now_str(),
+                            "note": "status_false_retry_failed",
+                            "retry_with_status_false": True,
+                            "original_error": str(err_txt),
+                        })
+                        await persist_job_update(job.job_id)
+                        logger.error(
+                            f"[QUEUE] status=False retry failed job_id={job.job_id} err={str(retry_err_txt)[:200]}"
+                        )
+                else:
+                    REGISTER_JOBS[job.job_id].update({
+                        "status": "failed",
+                        "error": str(err_txt),
+                        "updated_at": now_str(),
+                    })
+                    await persist_job_update(job.job_id)
+                    logger.error(f"[QUEUE] job failed job_id={job.job_id} err={str(err_txt)[:200]}")
 
         except Exception as e:
             REGISTER_JOBS[job.job_id] = REGISTER_JOBS.get(job.job_id, {}) or {}
@@ -774,9 +885,32 @@ async def ensure_register_queue_stats_notifier(bot):
     QUEUE_STATS_TASK = asyncio.create_task(_register_queue_stats_notifier(bot))
 
 
+async def _failed_register_retry_sweeper(bot):
+    logger.info(f"[QUEUE] failed retry sweeper started interval={FAILED_RETRY_SWEEP_INTERVAL_SEC}s")
+
+    while True:
+        try:
+            await requeue_failed_status_false_jobs()
+            await asyncio.sleep(max(60, FAILED_RETRY_SWEEP_INTERVAL_SEC))
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"[QUEUE] failed retry sweeper error: {repr(e)}")
+
+
+async def ensure_failed_register_retry_sweeper(bot):
+    global FAILED_RETRY_SWEEP_TASK
+
+    if FAILED_RETRY_SWEEP_TASK and not FAILED_RETRY_SWEEP_TASK.done():
+        return
+
+    FAILED_RETRY_SWEEP_TASK = asyncio.create_task(_failed_register_retry_sweeper(bot))
+
+
 async def startup_register_services(bot, workers: int = 2):
     await ensure_register_workers(bot, workers=workers)
     await ensure_register_queue_stats_notifier(bot)
+    await ensure_failed_register_retry_sweeper(bot)
 
 # ----------------------------
 # Keyboards
