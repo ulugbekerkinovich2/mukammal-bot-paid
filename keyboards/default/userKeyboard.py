@@ -3,7 +3,8 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 keyboard_user = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton("📞Raqamni yuborish", request_contact=True)],
-        [KeyboardButton("📊 Mening natijam")]
+        [KeyboardButton("📊 Mening natijam")],
+        [KeyboardButton("🎥 Sertifikatni olish uchun video qo‘llanma")]
     ],
     resize_keyboard=True
 
@@ -27,7 +28,8 @@ adminKeyboard_user = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton("📊 Admin Panel")],
         [KeyboardButton("📞Raqamni yuborish", request_contact=True)],
-        [KeyboardButton("📊 Mening natijam")]
+        [KeyboardButton("📊 Mening natijam")],
+        [KeyboardButton("🎥 Sertifikatni olish uchun video qo‘llanma")]
     ],
     resize_keyboard=True
 )

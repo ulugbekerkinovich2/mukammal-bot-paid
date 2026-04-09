@@ -1718,11 +1718,13 @@ async def show_my_result(message: types.Message, state: FSMContext):
 
 
 @dp.message_handler(Command("sertifikat_qollanma"), state="*")
+@dp.message_handler(Text(equals="🎥 Sertifikatni olish uchun video qo‘llanma"), state="*")
 async def send_certificate_guide(message: types.Message, state: FSMContext):
     global CERTIFICATE_GUIDE_FILE_ID
 
     await state.finish()
     kb = certificate_download_kb()
+    progress = await message.answer("⏳ Video qo‘llanma yuborilmoqda, biroz kuting...")
 
     try:
         if CERTIFICATE_GUIDE_FILE_ID:
@@ -1753,9 +1755,17 @@ async def send_certificate_guide(message: types.Message, state: FSMContext):
                 reply_markup=kb,
                 disable_web_page_preview=True,
             )
+        try:
+            await progress.delete()
+        except Exception:
+            pass
     except Exception as e:
         logger.error(f"Error in send_certificate_guide: {e}")
         await message.answer(
             "❌ Video qo‘llanmani yuborishda texnik xatolik yuz berdi.",
             reply_markup=kb,
         )
+        try:
+            await progress.delete()
+        except Exception:
+            pass
