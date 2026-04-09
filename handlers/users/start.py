@@ -33,6 +33,8 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(message)s"
 )
 
+CERTIFICATE_DOWNLOAD_URL = "https://mentalaba.uz/auth?sign-in"
+
 # =========================
 # Queue (BOT-side) + JSON persistence
 # =========================
@@ -1558,11 +1560,12 @@ async def show_my_result(message: types.Message, state: FSMContext):
         if file_url and "127.0.0.1:8000" in file_url:
             file_url = file_url.replace("http://127.0.0.1:8000", "https://dtmpaperreaderapi.mentalaba.uz")
         
-        kb = None
+        kb = InlineKeyboardMarkup(row_width=1)
         if file_url:
-            kb = InlineKeyboardMarkup().add(
-                InlineKeyboardButton("📄 PDF Natijani yuklash", url=file_url)
-            )
+            kb.add(InlineKeyboardButton("📄 PDF Natijani yuklash", url=file_url))
+        kb.add(
+            InlineKeyboardButton("🎓 Sertifikatni yuklab olish", url=CERTIFICATE_DOWNLOAD_URL)
+        )
 
         await message.answer(formatted_text, reply_markup=kb, parse_mode="HTML")
         try: await msg.delete()
