@@ -2,6 +2,7 @@ import re
 import os
 import json
 import uuid
+from pathlib import Path
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Set
@@ -34,6 +35,16 @@ logging.basicConfig(
 )
 
 CERTIFICATE_DOWNLOAD_URL = "https://mentalaba.uz/auth?sign-in"
+CERTIFICATE_GUIDE_VIDEO_PATH = Path(
+    os.getenv("CERTIFICATE_GUIDE_VIDEO_PATH", "/Users/m3/Downloads/Sertifikatni yuklab olish.mp4")
+)
+CERTIFICATE_GUIDE_CAPTION = (
+    "<b>Maxsus Sertifikatni olish uchun video qo‘llanma</b>\n\n"
+    "<blockquote>Mentalaba.uz hamkor OTMlariga imtihonsiz kirish imkoniyatidan "
+    "foydalanish uchun hoziroq platformadan ro‘yxatdan o‘ting, profilingizni "
+    "to‘ldiring va sertifikatingizni yuklab oling.</blockquote>"
+)
+QUEUE_STATS_INTERVAL_SEC = int(os.getenv("QUEUE_STATS_INTERVAL_SEC", "600"))
 
 # =========================
 # Queue (BOT-side) + JSON persistence
@@ -55,6 +66,8 @@ USER_LAST_JOB: Dict[int, str] = {}              # user_id -> job_id
 
 REGISTER_WORKERS_STARTED = False
 REGISTER_WORKERS: List[asyncio.Task] = []
+QUEUE_STATS_TASK: Optional[asyncio.Task] = None
+CERTIFICATE_GUIDE_FILE_ID: Optional[str] = None
 
 # har bir user uchun request lock
 USER_LOCKS = defaultdict(asyncio.Lock)
@@ -569,6 +582,93 @@ async def ensure_register_workers(bot, workers: int = 2):
 
     await requeue_pending_jobs()
 
+
+def get_register_queue_stats() -> Dict[str, int]:
+    queued = 0
+    processing = 0
+    success = 0
+    failed = 0
+    pending_users: Set[int] = set()
+
+    for info in REGISTER_JOBS.values():
+        if not isinstance(info, dict):
+            continue
+        status = str(info.get("status") or "").strip().lower()
+        user_id = _safe_int(info.get("user_id"))
+
+        if status == "queued":
+            queued += 1
+            if user_id:
+                pending_users.add(user_id)
+        elif status == "processing":
+            processing += 1
+            if user_id:
+                pending_users.add(user_id)
+        elif status == "success":
+            success += 1
+        elif status == "failed":
+            failed += 1
+
+    alive_workers = sum(1 for t in REGISTER_WORKERS if not t.done())
+    total_workers = len(REGISTER_WORKERS)
+
+    return {
+        "queued": queued,
+        "processing": processing,
+        "success": success,
+        "failed": failed,
+        "pending_total": queued + processing,
+        "pending_users": len(pending_users),
+        "queue_size": REGISTER_QUEUE.qsize(),
+        "alive_workers": alive_workers,
+        "total_workers": total_workers,
+        "total_jobs": len(REGISTER_JOBS),
+    }
+
+
+def build_register_queue_stats_text() -> str:
+    stats = get_register_queue_stats()
+
+    return (
+        "📊 <b>Register Queue Statistikasi</b>\n"
+        f"🕒 <b>Vaqt:</b> {now_str()}\n\n"
+        f"⏳ <b>Navbatda:</b> <code>{stats['queued']}</code>\n"
+        f"⚙️ <b>Ishlanmoqda:</b> <code>{stats['processing']}</code>\n"
+        f"👥 <b>Qolgan foydalanuvchi:</b> <code>{stats['pending_users']}</code>\n"
+        f"📦 <b>Queue size:</b> <code>{stats['queue_size']}</code>\n"
+        f"🧵 <b>Workerlar:</b> <code>{stats['alive_workers']}/{stats['total_workers']}</code>\n\n"
+        f"✅ <b>Success:</b> <code>{stats['success']}</code>\n"
+        f"❌ <b>Failed:</b> <code>{stats['failed']}</code>\n"
+        f"🗂 <b>Jami joblar:</b> <code>{stats['total_jobs']}</code>"
+    )
+
+
+async def _register_queue_stats_notifier(bot):
+    logger.info(f"[QUEUE] stats notifier started interval={QUEUE_STATS_INTERVAL_SEC}s")
+
+    while True:
+        try:
+            await asyncio.sleep(max(60, QUEUE_STATS_INTERVAL_SEC))
+            await notify_admins(bot, build_register_queue_stats_text())
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"[QUEUE] stats notifier error: {repr(e)}")
+
+
+async def ensure_register_queue_stats_notifier(bot):
+    global QUEUE_STATS_TASK
+
+    if QUEUE_STATS_TASK and not QUEUE_STATS_TASK.done():
+        return
+
+    QUEUE_STATS_TASK = asyncio.create_task(_register_queue_stats_notifier(bot))
+
+
+async def startup_register_services(bot, workers: int = 2):
+    await ensure_register_workers(bot, workers=workers)
+    await ensure_register_queue_stats_notifier(bot)
+
 # ----------------------------
 # Keyboards
 # ----------------------------
@@ -581,6 +681,12 @@ def ui_lang_kb(show_result_btn=False):
         InlineKeyboardButton("🇷🇺 Русский", callback_data="ui:ru"),
     )
     kb.add(InlineKeyboardButton("❌ Cancel", callback_data="reg_cancel"))
+    return kb
+
+
+def certificate_download_kb() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup(row_width=1)
+    kb.add(InlineKeyboardButton("🎓 Sertifikatni yuklab olish", url=CERTIFICATE_DOWNLOAD_URL))
     return kb
 
 def confirm_kb(ui_lang: str):
@@ -925,7 +1031,7 @@ async def start_cmd(message: types.Message, state: FSMContext):
 
     # 3. Natijasi bormi?
     res = await get_dtm_result(message.from_user.id)
-    show_btn = res and res.get("ok") and res.get("data")
+    show_btn = bool(extract_dtm_result_data(res))
 
     await send_clean(
         message, state,
@@ -960,7 +1066,7 @@ async def check_sub(call: types.CallbackQuery, state: FSMContext):
 
     # 2. Tilni tanlash
     res = await get_dtm_result(call.from_user.id)
-    show_btn = res and res.get("ok") and res.get("data")
+    show_btn = bool(extract_dtm_result_data(res))
 
     await edit_clean(
         call, state,
@@ -1508,24 +1614,59 @@ async def reg_job_check(call: types.CallbackQuery, state: FSMContext):
 # =========================
 # Result Lookup by chat_id
 # =========================
+def dtm_result_has_score(data):
+    try:
+        if float(data.get("total_ball", 0) or 0) > 0:
+            return True
+    except (TypeError, ValueError):
+        pass
+
+    for subject in data.get("subjects") or []:
+        try:
+            if int(subject.get("correct", 0) or 0) > 0:
+                return True
+        except (TypeError, ValueError):
+            pass
+
+        try:
+            if float(subject.get("score", 0) or 0) > 0:
+                return True
+        except (TypeError, ValueError):
+            pass
+
+    return False
+
+
+def extract_dtm_result_data(res):
+    if not isinstance(res, dict) or not res.get("ok"):
+        return None
+
+    data = res.get("data") if isinstance(res.get("data"), dict) else res
+    if not isinstance(data, dict):
+        return None
+
+    if (data.get("document_code") or data.get("full_name") or data.get("subjects")) and dtm_result_has_score(data):
+        return data
+    return None
+
+
 def format_dtm_result(data):
     full_name = data.get('full_name', 'Noma\'lum')
+    document_code = data.get('document_code')
     total_ball = data.get('total_ball', 0)
     subjects = data.get('subjects', [])
 
-    # Natija hali chiqmagan bo'lsa (hammasi 0 bo'lsa) None qaytaramiz
-    has_score = any(int(s.get('correct', 0)) > 0 for s in subjects) or float(total_ball) > 0
-    if not has_score:
-        return None
-
     msg = f"👤 <b>F.I.SH:</b> {full_name}\n"
+    if document_code:
+        msg += f"🆔 <b>Document code:</b> {document_code}\n"
     msg += f"📊 <b>Umumiy ball:</b> {total_ball}\n\n"
     
-    msg += "📖 <b>Fanlar bo'yicha natijalar:</b>\n"
-    for s in subjects:
-        msg += f"🔹 <b>{s.get('name')}:</b>\n"
-        msg += f"   ✅ To'g'ri: {s.get('correct')}/{s.get('allocated')}\n"
-        msg += f"   📈 Ball: {s.get('score')} ({s.get('percent')}%)\n"
+    if subjects:
+        msg += "📖 <b>Fanlar bo'yicha natijalar:</b>\n"
+        for s in subjects:
+            msg += f"🔹 <b>{s.get('name')}:</b>\n"
+            msg += f"   ✅ To'g'ri: {s.get('correct')}/{s.get('allocated')}\n"
+            msg += f"   📈 Ball: {s.get('score')} ({s.get('percent')}%)\n"
     
     return msg
 
@@ -1541,13 +1682,13 @@ async def show_my_result(message: types.Message, state: FSMContext):
         # Get result from API
         res = await get_dtm_result(user_id)
         
-        if not res or not res.get("ok"):
+        data = extract_dtm_result_data(res)
+        if not data:
             await message.answer("❌ Sizning natijangiz hali tayyor emas yoki kiritilmagan.")
             try: await msg.delete()
             except: pass
             return
 
-        data = res.get("data") or res
         formatted_text = format_dtm_result(data)
         
         if not formatted_text:
@@ -1560,12 +1701,9 @@ async def show_my_result(message: types.Message, state: FSMContext):
         if file_url and "127.0.0.1:8000" in file_url:
             file_url = file_url.replace("http://127.0.0.1:8000", "https://dtmpaperreaderapi.mentalaba.uz")
         
-        kb = InlineKeyboardMarkup(row_width=1)
+        kb = certificate_download_kb()
         if file_url:
-            kb.add(InlineKeyboardButton("📄 PDF Natijani yuklash", url=file_url))
-        kb.add(
-            InlineKeyboardButton("🎓 Sertifikatni yuklab olish", url=CERTIFICATE_DOWNLOAD_URL)
-        )
+            kb.row(InlineKeyboardButton("📄 PDF Natijani yuklash", url=file_url))
 
         await message.answer(formatted_text, reply_markup=kb, parse_mode="HTML")
         try: await msg.delete()
@@ -1576,3 +1714,47 @@ async def show_my_result(message: types.Message, state: FSMContext):
         await message.answer("❌ Natijani yuklashda texnik xatolik yuz berdi.")
         try: await msg.delete()
         except: pass
+
+
+@dp.message_handler(Command("sertifikat_qollanma"), state="*")
+async def send_certificate_guide(message: types.Message, state: FSMContext):
+    global CERTIFICATE_GUIDE_FILE_ID
+
+    await state.finish()
+    kb = certificate_download_kb()
+
+    try:
+        if CERTIFICATE_GUIDE_FILE_ID:
+            sent = await message.answer_video(
+                CERTIFICATE_GUIDE_FILE_ID,
+                caption=CERTIFICATE_GUIDE_CAPTION,
+                parse_mode="HTML",
+                reply_markup=kb,
+                supports_streaming=True,
+            )
+        elif CERTIFICATE_GUIDE_VIDEO_PATH.exists():
+            sent = await message.answer_video(
+                types.InputFile(str(CERTIFICATE_GUIDE_VIDEO_PATH)),
+                caption=CERTIFICATE_GUIDE_CAPTION,
+                parse_mode="HTML",
+                reply_markup=kb,
+                supports_streaming=True,
+            )
+            if getattr(sent, "video", None) and sent.video.file_id:
+                CERTIFICATE_GUIDE_FILE_ID = sent.video.file_id
+        else:
+            await message.answer(
+                "❌ Video qo‘llanma fayli topilmadi. Administratorga murojaat qiling."
+            )
+            await message.answer(
+                CERTIFICATE_GUIDE_CAPTION,
+                parse_mode="HTML",
+                reply_markup=kb,
+                disable_web_page_preview=True,
+            )
+    except Exception as e:
+        logger.error(f"Error in send_certificate_guide: {e}")
+        await message.answer(
+            "❌ Video qo‘llanmani yuborishda texnik xatolik yuz berdi.",
+            reply_markup=kb,
+        )
