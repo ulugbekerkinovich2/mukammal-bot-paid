@@ -2,6 +2,7 @@ import re
 import os
 import json
 import uuid
+import html
 from pathlib import Path
 from dataclasses import dataclass
 from datetime import datetime
@@ -627,10 +628,96 @@ def get_register_queue_stats() -> Dict[str, int]:
     }
 
 
+def _parse_job_updated_at(value: str) -> Optional[datetime]:
+    try:
+        return datetime.strptime(str(value), "%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return None
+
+
+def _categorize_register_error(error_text: str) -> str:
+    err = str(error_text or "").strip()
+    err_l = err.lower()
+
+    if not err:
+        return "Noma'lum xatolik"
+    if "timeout" in err_l:
+        return "Timeout / javob kechikdi"
+    if "user already exists" in err_l:
+        return "User already exists"
+    if "invalid phone" in err_l:
+        return "Telefon noto'g'ri"
+    if "diskfull" in err_l or "no space left on device" in err_l:
+        return "Server disk to'lgan"
+    if "queue_full" in err_l:
+        return "Queue to'lib qolgan"
+    if "payload_missing" in err_l:
+        return "Payload topilmadi"
+    if "clienterror" in err_l:
+        return "Network client error"
+    if "503" in err_l:
+        return "Service unavailable"
+    if "504" in err_l:
+        return "Gateway timeout"
+    if "500" in err_l:
+        return "Server 500 xatolik"
+    if "psycopg2" in err_l or "sqlalchemy" in err_l or "database" in err_l:
+        return "Database xatoligi"
+
+    first_line = err.splitlines()[0].strip()
+    return first_line[:70] + ("..." if len(first_line) > 70 else "")
+
+
+def get_register_failed_insights(limit: int = 10) -> Dict[str, Any]:
+    today = datetime.now().date()
+    top_reasons: Dict[str, int] = {}
+    recent_failed: List[Dict[str, Any]] = []
+    today_failed = 0
+
+    for job_id, info in REGISTER_JOBS.items():
+        if not isinstance(info, dict) or str(info.get("status") or "").lower() != "failed":
+            continue
+
+        updated_at = str(info.get("updated_at") or "-")
+        dt = _parse_job_updated_at(updated_at)
+        if dt and dt.date() == today:
+            today_failed += 1
+
+        reason = _categorize_register_error(info.get("error"))
+        top_reasons[reason] = top_reasons.get(reason, 0) + 1
+        recent_failed.append({
+            "job_id": job_id,
+            "updated_at": updated_at,
+            "updated_at_dt": dt,
+            "user_id": _safe_int(info.get("user_id")) or "-",
+            "reason": reason,
+        })
+
+    recent_failed.sort(
+        key=lambda item: (
+            item["updated_at_dt"] or datetime.min,
+            str(item["updated_at"]),
+        ),
+        reverse=True,
+    )
+
+    top_reasons_sorted = sorted(
+        top_reasons.items(),
+        key=lambda item: (-item[1], item[0]),
+    )[:3]
+
+    return {
+        "today_failed": today_failed,
+        "top_reasons": top_reasons_sorted,
+        "recent_failed": recent_failed[:limit],
+    }
+
+
 def build_register_queue_stats_text() -> str:
     stats = get_register_queue_stats()
+    failed_insights = get_register_failed_insights(limit=10)
 
-    return (
+    msg = (
         "📊 <b>Register Queue Statistikasi</b>\n"
         f"🕒 <b>Vaqt:</b> {now_str()}\n\n"
         f"⏳ <b>Navbatda:</b> <code>{stats['queued']}</code>\n"
@@ -642,6 +729,27 @@ def build_register_queue_stats_text() -> str:
         f"❌ <b>Failed:</b> <code>{stats['failed']}</code>\n"
         f"🗂 <b>Jami joblar:</b> <code>{stats['total_jobs']}</code>"
     )
+
+    if stats["failed"] > 0:
+        msg += f"\n\n📅 <b>Bugun failed:</b> <code>{failed_insights['today_failed']}</code>"
+
+        if failed_insights["top_reasons"]:
+            msg += "\n🔝 <b>Top failed sabablar:</b>\n"
+            for reason, count in failed_insights["top_reasons"]:
+                msg += f"• {html.escape(str(reason))}: <code>{count}</code>\n"
+            msg = msg.rstrip()
+
+        if failed_insights["recent_failed"]:
+            msg += "\n\n🧾 <b>So‘nggi 10 failed job:</b>\n"
+            for item in failed_insights["recent_failed"]:
+                msg += (
+                    f"• <code>{html.escape(str(item['updated_at']))}</code> | "
+                    f"<code>{html.escape(str(item['user_id']))}</code> | "
+                    f"{html.escape(str(item['reason']))}\n"
+                )
+            msg = msg.rstrip()
+
+    return msg
 
 
 async def _register_queue_stats_notifier(bot):
