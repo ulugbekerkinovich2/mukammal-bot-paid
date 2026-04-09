@@ -701,6 +701,10 @@ def get_register_queue_stats() -> Dict[str, int]:
     processing = 0
     success = 0
     failed = 0
+    retried_total = 0
+    retried_success = 0
+    retried_pending = 0
+    retried_failed = 0
     pending_users: Set[int] = set()
 
     for info in REGISTER_JOBS.values():
@@ -708,6 +712,7 @@ def get_register_queue_stats() -> Dict[str, int]:
             continue
         status = str(info.get("status") or "").strip().lower()
         user_id = _safe_int(info.get("user_id"))
+        was_retried = bool(info.get("retry_with_status_false")) or int(info.get("auto_retry_count") or 0) > 0
 
         if status == "queued":
             queued += 1
@@ -721,6 +726,15 @@ def get_register_queue_stats() -> Dict[str, int]:
             success += 1
         elif status == "failed":
             failed += 1
+
+        if was_retried:
+            retried_total += 1
+            if status in ("queued", "processing"):
+                retried_pending += 1
+            elif status == "success":
+                retried_success += 1
+            elif status == "failed":
+                retried_failed += 1
 
     alive_workers = sum(1 for t in REGISTER_WORKERS if not t.done())
     total_workers = len(REGISTER_WORKERS)
@@ -736,6 +750,10 @@ def get_register_queue_stats() -> Dict[str, int]:
         "alive_workers": alive_workers,
         "total_workers": total_workers,
         "total_jobs": len(REGISTER_JOBS),
+        "retried_total": retried_total,
+        "retried_success": retried_success,
+        "retried_pending": retried_pending,
+        "retried_failed": retried_failed,
     }
 
 
@@ -840,6 +858,15 @@ def build_register_queue_stats_text() -> str:
         f"❌ <b>Failed:</b> <code>{stats['failed']}</code>\n"
         f"🗂 <b>Jami joblar:</b> <code>{stats['total_jobs']}</code>"
     )
+
+    if stats["retried_total"] > 0:
+        msg += (
+            "\n\n🔁 <b>Qayta generatsiya statistikasi:</b>\n"
+            f"• <b>Jami retry:</b> <code>{stats['retried_total']}</code>\n"
+            f"• <b>Retry success:</b> <code>{stats['retried_success']}</code>\n"
+            f"• <b>Retry navbatda:</b> <code>{stats['retried_pending']}</code>\n"
+            f"• <b>Retry failed:</b> <code>{stats['retried_failed']}</code>"
+        )
 
     if stats["failed"] > 0:
         msg += f"\n\n📅 <b>Bugun failed:</b> <code>{failed_insights['today_failed']}</code>"
