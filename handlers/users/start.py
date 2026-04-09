@@ -46,7 +46,7 @@ CERTIFICATE_GUIDE_CAPTION = (
     "foydalanish uchun hoziroq platformadan ro‘yxatdan o‘ting, profilingizni "
     "to‘ldiring va sertifikatingizni yuklab oling.</blockquote>"
 )
-QUEUE_STATS_INTERVAL_SEC = int(os.getenv("QUEUE_STATS_INTERVAL_SEC", "600"))
+QUEUE_STATS_INTERVAL_SEC = int(os.getenv("QUEUE_STATS_INTERVAL_SEC", "3600"))
 
 # =========================
 # Queue (BOT-side) + JSON persistence
