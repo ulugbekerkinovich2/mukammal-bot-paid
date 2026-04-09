@@ -35,8 +35,9 @@ logging.basicConfig(
 )
 
 CERTIFICATE_DOWNLOAD_URL = "https://mentalaba.uz/auth?sign-in"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CERTIFICATE_GUIDE_VIDEO_PATH = Path(
-    os.getenv("CERTIFICATE_GUIDE_VIDEO_PATH", "/Users/m3/Downloads/Sertifikatni yuklab olish.mp4")
+    os.getenv("CERTIFICATE_GUIDE_VIDEO_PATH", str(PROJECT_ROOT / "media" / "sertifikatni-yuklab-olish.mp4"))
 )
 CERTIFICATE_GUIDE_CAPTION = (
     "<b>Maxsus Sertifikatni olish uchun video qo‘llanma</b>\n\n"
