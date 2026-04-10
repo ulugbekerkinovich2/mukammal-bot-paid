@@ -2127,21 +2127,30 @@ async def show_my_result(message: types.Message, state: FSMContext):
         
         kb = certificate_download_kb()
         if file_url:
-            kb.row(InlineKeyboardButton("📄 PDF Natijani yuklash", url=file_url))
+            try:
+                await message.answer_document(
+                    document=file_url,
+                    caption=f"<b>Test natijangiz tayyor.</b>\n\n{formatted_text}",
+                    parse_mode="HTML",
+                    reply_markup=kb,
+                )
+                try:
+                    await msg.delete()
+                except:
+                    pass
+                return
+            except Exception as document_err:
+                logger.error(f"Result document send error: {document_err}")
+                kb.row(InlineKeyboardButton("📄 PDF Natijani yuklash", url=file_url))
+        else:
+            kb = certificate_download_kb()
 
         sent_result = await message.answer(
-            formatted_text,
+            f"<b>Test natijangiz tayyor.</b>\n\n{formatted_text}",
             parse_mode="HTML",
             disable_web_page_preview=True,
+            reply_markup=kb,
         )
-        try:
-            await sent_result.edit_reply_markup(reply_markup=kb)
-        except Exception as markup_err:
-            logger.error(f"Result inline keyboard attach error: {markup_err}")
-            await message.answer(
-                "Quyidagi tugmalardan foydalaning:",
-                reply_markup=kb,
-            )
         try: await msg.delete()
         except: pass
         
