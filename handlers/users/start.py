@@ -2129,7 +2129,19 @@ async def show_my_result(message: types.Message, state: FSMContext):
         if file_url:
             kb.row(InlineKeyboardButton("📄 PDF Natijani yuklash", url=file_url))
 
-        await message.answer(formatted_text, reply_markup=kb, parse_mode="HTML")
+        sent_result = await message.answer(
+            formatted_text,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+        try:
+            await sent_result.edit_reply_markup(reply_markup=kb)
+        except Exception as markup_err:
+            logger.error(f"Result inline keyboard attach error: {markup_err}")
+            await message.answer(
+                "Quyidagi tugmalardan foydalaning:",
+                reply_markup=kb,
+            )
         try: await msg.delete()
         except: pass
         
