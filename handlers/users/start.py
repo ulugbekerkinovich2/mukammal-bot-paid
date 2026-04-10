@@ -302,6 +302,49 @@ def pretty_register_error(raw: str, ui_lang: str = "uz") -> str:
 
     return (f"❌ Ошибка: {detail}" if ui_lang == "ru" else f"❌ Xatolik: {detail}")
 
+
+def is_register_duplicate_error(error_text: str) -> bool:
+    return _categorize_register_error(error_text) == "User already exists"
+
+
+def should_treat_register_as_success(user_id: int, error_text: str) -> bool:
+    if not user_id or not is_register_duplicate_error(error_text):
+        return False
+
+    try:
+        return bool(check_user_exists(user_id))
+    except Exception as e:
+        logger.error(f"REGISTER SUCCESS CHECK ERROR => {repr(e)}")
+        return False
+
+
+async def mark_register_job_success(
+    job_id: str,
+    *,
+    result: Optional[Dict[str, Any]] = None,
+    note: str = "",
+    original_error: str = "",
+) -> Dict[str, Any]:
+    REGISTER_JOBS[job_id] = REGISTER_JOBS.get(job_id, {}) or {}
+    success_result = dict(result or {})
+    success_result.setdefault("ok", True)
+    success_result.setdefault("status", 200)
+
+    REGISTER_JOBS[job_id].update({
+        "status": "success",
+        "result": success_result,
+        "updated_at": now_str(),
+    })
+    REGISTER_JOBS[job_id].pop("error", None)
+
+    if note:
+        REGISTER_JOBS[job_id]["note"] = note
+    if original_error:
+        REGISTER_JOBS[job_id]["original_error"] = str(original_error)
+
+    await persist_job_update(job_id)
+    return REGISTER_JOBS[job_id]
+
 # ----------------------------
 # Bot message cleanup helpers
 # ----------------------------
@@ -612,33 +655,50 @@ async def _register_worker(worker_idx: int, bot):
             res = await register_user(**job.payload)
 
             if isinstance(res, dict) and res.get("ok") is True:
-                REGISTER_JOBS[job.job_id].update({
-                    "status": "success",
-                    "result": res,
-                    "updated_at": now_str(),
-                })
-                await persist_job_update(job.job_id)
+                await mark_register_job_success(job.job_id, result=res)
                 logger.info(f"[QUEUE] job success job_id={job.job_id}")
             else:
                 err_txt = res.get("text") if isinstance(res, dict) else str(res)
-                if should_retry_register_with_status_false(err_txt) and job.payload.get("status", True) is not False:
+                if should_treat_register_as_success(job.user_id, err_txt):
+                    await mark_register_job_success(
+                        job.job_id,
+                        result={"ok": True, "status": 200},
+                        note="success_after_existing_user_check",
+                        original_error=str(err_txt),
+                    )
+                    logger.info(
+                        f"[QUEUE] job normalized to success from existing-user check job_id={job.job_id}"
+                    )
+                elif should_retry_register_with_status_false(err_txt) and job.payload.get("status", True) is not False:
                     logger.warning(
                         f"[QUEUE] retry with status=False job_id={job.job_id} err={str(err_txt)[:200]}"
                     )
                     retry_res = await retry_register_with_status_false(job.payload)
 
                     if isinstance(retry_res, dict) and retry_res.get("ok") is True:
-                        REGISTER_JOBS[job.job_id].update({
-                            "status": "success",
-                            "result": retry_res,
-                            "updated_at": now_str(),
-                            "note": "success_after_status_false_retry",
-                            "retry_with_status_false": True,
-                            "original_error": str(err_txt),
-                        })
+                        await mark_register_job_success(
+                            job.job_id,
+                            result=retry_res,
+                            note="success_after_status_false_retry",
+                            original_error=str(err_txt),
+                        )
+                        REGISTER_JOBS[job.job_id]["retry_with_status_false"] = True
                         await persist_job_update(job.job_id)
                         logger.info(
                             f"[QUEUE] job success after status=False retry job_id={job.job_id}"
+                        )
+                    elif should_treat_register_as_success(job.user_id, retry_res.get("text") if isinstance(retry_res, dict) else str(retry_res)):
+                        retry_err_txt = retry_res.get("text") if isinstance(retry_res, dict) else str(retry_res)
+                        await mark_register_job_success(
+                            job.job_id,
+                            result={"ok": True, "status": 200},
+                            note="success_after_status_false_existing_user_check",
+                            original_error=str(retry_err_txt),
+                        )
+                        REGISTER_JOBS[job.job_id]["retry_with_status_false"] = True
+                        await persist_job_update(job.job_id)
+                        logger.info(
+                            f"[QUEUE] job normalized to success after status=False retry existing-user check job_id={job.job_id}"
                         )
                     else:
                         retry_err_txt = retry_res.get("text") if isinstance(retry_res, dict) else str(retry_res)
@@ -797,11 +857,27 @@ def _categorize_register_error(error_text: str) -> str:
     return first_line[:70] + ("..." if len(first_line) > 70 else "")
 
 
+def _classify_register_error_bucket(reason: str) -> str:
+    normalized_reason = str(reason or "").strip().lower()
+
+    if normalized_reason == "user already exists":
+        return "duplicate"
+    if normalized_reason == "telefon noto'g'ri":
+        return "validation"
+    return "technical"
+
+
 def get_register_failed_insights(limit: int = 10) -> Dict[str, Any]:
     today = datetime.now().date()
-    top_reasons: Dict[str, int] = {}
-    recent_failed: List[Dict[str, Any]] = []
-    today_failed = 0
+    technical_reasons: Dict[str, int] = {}
+    technical_failed: List[Dict[str, Any]] = []
+    technical_failed_total = 0
+    today_technical_failed = 0
+    duplicate_failed_total = 0
+    today_duplicate_failed = 0
+    duplicate_users_today: Set[int] = set()
+    validation_failed_total = 0
+    today_validation_failed = 0
 
     for job_id, info in REGISTER_JOBS.items():
         if not isinstance(info, dict) or str(info.get("status") or "").lower() != "failed":
@@ -809,20 +885,39 @@ def get_register_failed_insights(limit: int = 10) -> Dict[str, Any]:
 
         updated_at = str(info.get("updated_at") or "-")
         dt = _parse_job_updated_at(updated_at)
-        if dt and dt.date() == today:
-            today_failed += 1
-
+        is_today = bool(dt and dt.date() == today)
+        user_id = _safe_int(info.get("user_id")) or "-"
         reason = _categorize_register_error(info.get("error"))
-        top_reasons[reason] = top_reasons.get(reason, 0) + 1
-        recent_failed.append({
+        bucket = _classify_register_error_bucket(reason)
+
+        if bucket == "duplicate":
+            duplicate_failed_total += 1
+            if is_today:
+                today_duplicate_failed += 1
+                if isinstance(user_id, int):
+                    duplicate_users_today.add(user_id)
+            continue
+
+        if bucket == "validation":
+            validation_failed_total += 1
+            if is_today:
+                today_validation_failed += 1
+            continue
+
+        technical_failed_total += 1
+        if is_today:
+            today_technical_failed += 1
+
+        technical_reasons[reason] = technical_reasons.get(reason, 0) + 1
+        technical_failed.append({
             "job_id": job_id,
             "updated_at": updated_at,
             "updated_at_dt": dt,
-            "user_id": _safe_int(info.get("user_id")) or "-",
+            "user_id": user_id,
             "reason": reason,
         })
 
-    recent_failed.sort(
+    technical_failed.sort(
         key=lambda item: (
             item["updated_at_dt"] or datetime.min,
             str(item["updated_at"]),
@@ -830,21 +925,38 @@ def get_register_failed_insights(limit: int = 10) -> Dict[str, Any]:
         reverse=True,
     )
 
+    recent_failed: List[Dict[str, Any]] = []
+    recent_seen: Set[Any] = set()
+    for item in technical_failed:
+        dedupe_key = (item["user_id"], item["reason"])
+        if dedupe_key in recent_seen:
+            continue
+        recent_seen.add(dedupe_key)
+        recent_failed.append(item)
+        if len(recent_failed) >= max(1, limit):
+            break
+
     top_reasons_sorted = sorted(
-        top_reasons.items(),
+        technical_reasons.items(),
         key=lambda item: (-item[1], item[0]),
     )[:3]
 
     return {
-        "today_failed": today_failed,
-        "top_reasons": top_reasons_sorted,
-        "recent_failed": recent_failed[:limit],
+        "technical_failed_total": technical_failed_total,
+        "today_technical_failed": today_technical_failed,
+        "duplicate_failed_total": duplicate_failed_total,
+        "today_duplicate_failed": today_duplicate_failed,
+        "duplicate_users_today": len(duplicate_users_today),
+        "validation_failed_total": validation_failed_total,
+        "today_validation_failed": today_validation_failed,
+        "top_technical_reasons": top_reasons_sorted,
+        "recent_technical_failed": recent_failed,
     }
 
 
 def build_register_queue_stats_text() -> str:
     stats = get_register_queue_stats()
-    failed_insights = get_register_failed_insights(limit=10)
+    failed_insights = get_register_failed_insights(limit=5)
 
     msg = (
         "📊 <b>Register Queue Statistikasi</b>\n"
@@ -855,7 +967,7 @@ def build_register_queue_stats_text() -> str:
         f"📦 <b>Queue size:</b> <code>{stats['queue_size']}</code>\n"
         f"🧵 <b>Workerlar:</b> <code>{stats['alive_workers']}/{stats['total_workers']}</code>\n\n"
         f"✅ <b>Success:</b> <code>{stats['success']}</code>\n"
-        f"❌ <b>Failed:</b> <code>{stats['failed']}</code>\n"
+        f"❌ <b>Failed (jami):</b> <code>{stats['failed']}</code>\n"
         f"🗂 <b>Jami joblar:</b> <code>{stats['total_jobs']}</code>"
     )
 
@@ -869,17 +981,42 @@ def build_register_queue_stats_text() -> str:
         )
 
     if stats["failed"] > 0:
-        msg += f"\n\n📅 <b>Bugun failed:</b> <code>{failed_insights['today_failed']}</code>"
+        msg += (
+            "\n\n🧠 <b>Failed tahlili:</b>\n"
+            f"• <b>Texnik failed:</b> <code>{failed_insights['technical_failed_total']}</code>\n"
+            f"• <b>Bugun texnik failed:</b> <code>{failed_insights['today_technical_failed']}</code>"
+        )
 
-        if failed_insights["top_reasons"]:
-            msg += "\n🔝 <b>Top failed sabablar:</b>\n"
-            for reason, count in failed_insights["top_reasons"]:
+        if failed_insights["duplicate_failed_total"] > 0:
+            msg += (
+                "\n"
+                f"• <b>Duplicate urinishlar:</b> <code>{failed_insights['duplicate_failed_total']}</code>\n"
+                f"• <b>Bugun duplicate:</b> <code>{failed_insights['today_duplicate_failed']}</code>"
+            )
+            if failed_insights["duplicate_users_today"] > 0:
+                msg += (
+                    f" | <b>Unique user:</b> "
+                    f"<code>{failed_insights['duplicate_users_today']}</code>"
+                )
+
+        if failed_insights["validation_failed_total"] > 0:
+            msg += (
+                "\n"
+                f"• <b>Validatsiya rad etildi:</b> <code>{failed_insights['validation_failed_total']}</code>\n"
+                f"• <b>Bugun validatsiya failed:</b> <code>{failed_insights['today_validation_failed']}</code>"
+            )
+
+        if failed_insights["top_technical_reasons"]:
+            msg += "\n\n🔝 <b>Top texnik sabablar:</b>\n"
+            for reason, count in failed_insights["top_technical_reasons"]:
                 msg += f"• {html.escape(str(reason))}: <code>{count}</code>\n"
             msg = msg.rstrip()
+        elif failed_insights["technical_failed_total"] == 0:
+            msg += "\n\nℹ️ <b>Hozircha texnik failed yo‘q.</b> Failedlar asosan duplicate yoki validatsiya sababli."
 
-        if failed_insights["recent_failed"]:
-            msg += "\n\n🧾 <b>So‘nggi 10 failed job:</b>\n"
-            for item in failed_insights["recent_failed"]:
+        if failed_insights["recent_technical_failed"]:
+            msg += "\n\n🧾 <b>So‘nggi texnik failedlar:</b>\n"
+            for item in failed_insights["recent_technical_failed"]:
                 msg += (
                     f"• <code>{html.escape(str(item['updated_at']))}</code> | "
                     f"<code>{html.escape(str(item['user_id']))}</code> | "
@@ -1794,6 +1931,39 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
         # state.finish() qilmaymiz: user "Tekshirish" bilan natijani ko'radi
         return
 
+async def complete_register_success(
+    call: types.CallbackQuery,
+    state: FSMContext,
+    ui_lang: str,
+    job_id: str,
+    info: dict,
+):
+    success_text = tr(ui_lang, "success")
+    try:
+        await call.message.edit_text(success_text, reply_markup=None)
+    except Exception:
+        await call.bot.send_message(call.message.chat.id, success_text)
+
+    await notify_admins(call.bot, (
+        f"🧾 <b>REGISTER SUCCESS (BOT QUEUE)</b>\n"
+        f"🕒 <b>Time:</b> {now_str()}\n"
+        f"👤 <b>User:</b> {_tg_user_link(call.from_user)}\n"
+        f"🆔 <b>Chat ID:</b> <code>{call.from_user.id}</code>\n"
+        f"🧩 <b>Job ID:</b> <code>{job_id}</code>\n"
+        f"📝 <b>Full name:</b> <code>{(info.get('payload') or {}).get('full_name','-')}</code>\n\n"
+        f"{build_register_details(info.get('payload') or {})}"
+    ))
+
+    await notify_account_reuse_if_needed(
+        call.bot,
+        call.from_user,
+        job_id,
+        info.get("payload") or {},
+    )
+
+    await state.finish()
+
+
 @dp.callback_query_handler(lambda c: c.data and c.data.startswith("reg_job_check:"), state="*")
 async def reg_job_check(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
@@ -1829,35 +1999,21 @@ async def reg_job_check(call: types.CallbackQuery, state: FSMContext):
         return
 
     if st == "success":
-        success_text = tr(ui_lang, "success")
-        try:
-            await call.message.edit_text(success_text, reply_markup=None)
-        except Exception:
-            await call.bot.send_message(call.message.chat.id, success_text)
-
-        # admin log
-        await notify_admins(call.bot, (
-            f"🧾 <b>REGISTER SUCCESS (BOT QUEUE)</b>\n"
-            f"🕒 <b>Time:</b> {now_str()}\n"
-            f"👤 <b>User:</b> {_tg_user_link(call.from_user)}\n"
-            f"🆔 <b>Chat ID:</b> <code>{call.from_user.id}</code>\n"
-            f"🧩 <b>Job ID:</b> <code>{job_id}</code>\n"
-            f"📝 <b>Full name:</b> <code>{(info.get('payload') or {}).get('full_name','-')}</code>\n\n"
-            f"{build_register_details(info.get('payload') or {})}"
-        ))
-
-        await notify_account_reuse_if_needed(
-            call.bot,
-            call.from_user,
-            job_id,
-            info.get("payload") or {},
-        )
-
-        await state.finish()
+        await complete_register_success(call, state, ui_lang, job_id, info)
         return
 
     if st == "failed":
         err = info.get("error") or "Unknown error"
+        if should_treat_register_as_success(call.from_user.id, err):
+            info = await mark_register_job_success(
+                job_id,
+                result={"ok": True, "status": 200},
+                note="success_on_manual_check_after_existing_user_check",
+                original_error=str(err),
+            )
+            await complete_register_success(call, state, ui_lang, job_id, info)
+            return
+
         user_err = pretty_register_error(str(err), ui_lang=ui_lang)
         try:
             await call.message.edit_text(user_err, reply_markup=None)
