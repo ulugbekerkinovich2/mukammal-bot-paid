@@ -603,8 +603,9 @@ async def retry_register_with_status_false(payload: Dict[str, Any], err_text: st
     )
 
 
-async def requeue_failed_status_false_jobs(limit: int = 25) -> int:
+async def requeue_failed_status_false_jobs(limit: int = 25) -> List[Dict[str, Any]]:
     requeued = 0
+    retried_items: List[Dict[str, Any]] = []
 
     for job_id, info in list(REGISTER_JOBS.items()):
         if requeued >= limit:
@@ -651,11 +652,43 @@ async def requeue_failed_status_false_jobs(limit: int = 25) -> int:
             "retry_with_status_false": True,
         })
         await persist_job_update(job_id)
+        retried_items.append({
+            "job_id": job_id,
+            "updated_at": str(info.get("updated_at") or "-"),
+            "user_id": _safe_int(info.get("user_id")) or "-",
+            "reason": _categorize_register_error(err_txt),
+            "retry_count": int(info.get("auto_retry_count") or 0),
+        })
         requeued += 1
 
     if requeued:
         logger.info(f"[QUEUE] requeued {requeued} failed jobs with extended retry strategy")
-    return requeued
+    return retried_items
+
+
+def build_failed_retry_requeue_text(items: List[Dict[str, Any]]) -> str:
+    visible_items = items[:10]
+    msg = (
+        "🔁 <b>Eski texnik failedlar topildi</b>\n"
+        "🛠 <b>Qayta generatsiyaga yuboryapman</b>\n"
+        f"🕒 <b>Vaqt:</b> {now_str()}\n"
+        f"📦 <b>Jami topildi:</b> <code>{len(items)}</code>\n"
+        "⚙️ <b>Rejim:</b> <code>long timeout + status=False</code>\n\n"
+        "🧾 <b>Qayta yuborilgan joblar:</b>\n"
+    )
+
+    for item in visible_items:
+        msg += (
+            f"• <code>{html.escape(str(item['updated_at']))}</code> | "
+            f"<code>{html.escape(str(item['user_id']))}</code> | "
+            f"{html.escape(str(item['reason']))} | "
+            f"retry <code>#{html.escape(str(item['retry_count']))}</code>\n"
+        )
+
+    if len(items) > len(visible_items):
+        msg += f"• ... yana <code>{len(items) - len(visible_items)}</code> ta job\n"
+
+    return msg.rstrip()
 
 # ----------------------------
 # Queue workers
@@ -1085,7 +1118,9 @@ async def _failed_register_retry_sweeper(bot):
 
     while True:
         try:
-            await requeue_failed_status_false_jobs()
+            retried_items = await requeue_failed_status_false_jobs()
+            if retried_items:
+                await notify_admins(bot, build_failed_retry_requeue_text(retried_items))
             await asyncio.sleep(max(60, FAILED_RETRY_SWEEP_INTERVAL_SEC))
         except asyncio.CancelledError:
             raise
