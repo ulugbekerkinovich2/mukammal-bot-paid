@@ -21,7 +21,14 @@ from states.userStates import Registration
 from data.config import SUBJECTS_MAP
 from keyboards.inline.user_inline import language_keyboard_button, gender_kb
 
-from utils.send_req import register_user, get_dtm_result, check_user_exists
+from utils.send_req import (
+    register_user,
+    get_dtm_result,
+    check_user_exists,
+    REGISTER_RETRY_TIMEOUT_SEC,
+    REGISTER_RETRY_CONNECT_SEC,
+    REGISTER_RETRY_ATTEMPTS,
+)
 from data.config import ADMIN_CHAT_ID, CHANNEL_USERNAME, CHANNEL_LINK
 from data.config import BASE_URL
 
@@ -48,6 +55,7 @@ CERTIFICATE_GUIDE_CAPTION = (
 )
 QUEUE_STATS_INTERVAL_SEC = int(os.getenv("QUEUE_STATS_INTERVAL_SEC", "3600"))
 FAILED_RETRY_SWEEP_INTERVAL_SEC = int(os.getenv("FAILED_RETRY_SWEEP_INTERVAL_SEC", "600"))
+FAILED_RETRY_MAX_COUNT = int(os.getenv("FAILED_RETRY_MAX_COUNT", "4"))
 
 # =========================
 # Queue (BOT-side) + JSON persistence
@@ -560,19 +568,39 @@ def should_retry_register_with_status_false(err_text: str) -> bool:
     if not err:
         return False
 
-    pdf_failure_markers = (
+    retry_markers = (
         "pdf generation failed",
         "after-page images",
         "after page images",
         "topilmadi",
+        "timeout",
+        "timed out",
+        "gateway timeout",
+        "read timed out",
+        "504",
+        "503",
+        "service unavailable",
+        "clienterror",
     )
-    return any(marker in err for marker in pdf_failure_markers)
+    return any(marker in err for marker in retry_markers)
 
 
-async def retry_register_with_status_false(payload: Dict[str, Any]) -> Dict[str, Any]:
+def can_retry_failed_job(info: Dict[str, Any]) -> bool:
+    if not isinstance(info, dict):
+        return False
+    return int(info.get("auto_retry_count") or 0) < FAILED_RETRY_MAX_COUNT
+
+
+async def retry_register_with_status_false(payload: Dict[str, Any], err_text: str = "") -> Dict[str, Any]:
     retry_payload = dict(payload or {})
-    retry_payload["status"] = False
-    return await register_user(**retry_payload)
+    if should_retry_register_with_status_false(err_text):
+        retry_payload["status"] = False
+    return await register_user(
+        **retry_payload,
+        retries=REGISTER_RETRY_ATTEMPTS,
+        timeout_total=REGISTER_RETRY_TIMEOUT_SEC,
+        timeout_connect=REGISTER_RETRY_CONNECT_SEC,
+    )
 
 
 async def requeue_failed_status_false_jobs(limit: int = 25) -> int:
@@ -589,15 +617,15 @@ async def requeue_failed_status_false_jobs(limit: int = 25) -> int:
         err_txt = str(info.get("error") or info.get("original_error") or "")
         if not should_retry_register_with_status_false(err_txt):
             continue
+        if not can_retry_failed_job(info):
+            continue
 
         payload = info.get("payload")
         if not isinstance(payload, dict):
             continue
 
-        if str(payload.get("status")).lower() == "false":
-            retry_payload = dict(payload)
-        else:
-            retry_payload = dict(payload)
+        retry_payload = dict(payload)
+        if should_retry_register_with_status_false(err_txt):
             retry_payload["status"] = False
 
         try:
@@ -618,7 +646,7 @@ async def requeue_failed_status_false_jobs(limit: int = 25) -> int:
             "status": "queued",
             "payload": retry_payload,
             "updated_at": now_str(),
-            "note": "requeued_failed_pdf_with_status_false",
+            "note": "requeued_failed_with_long_timeout_and_status_false",
             "auto_retry_count": int(info.get("auto_retry_count") or 0) + 1,
             "retry_with_status_false": True,
         })
@@ -626,7 +654,7 @@ async def requeue_failed_status_false_jobs(limit: int = 25) -> int:
         requeued += 1
 
     if requeued:
-        logger.info(f"[QUEUE] requeued {requeued} failed jobs with status=False")
+        logger.info(f"[QUEUE] requeued {requeued} failed jobs with extended retry strategy")
     return requeued
 
 # ----------------------------
@@ -669,36 +697,38 @@ async def _register_worker(worker_idx: int, bot):
                     logger.info(
                         f"[QUEUE] job normalized to success from existing-user check job_id={job.job_id}"
                     )
-                elif should_retry_register_with_status_false(err_txt) and job.payload.get("status", True) is not False:
+                elif should_retry_register_with_status_false(err_txt) and can_retry_failed_job(REGISTER_JOBS.get(job.job_id, {})):
                     logger.warning(
-                        f"[QUEUE] retry with status=False job_id={job.job_id} err={str(err_txt)[:200]}"
+                        f"[QUEUE] retry with extended timeout job_id={job.job_id} err={str(err_txt)[:200]}"
                     )
-                    retry_res = await retry_register_with_status_false(job.payload)
+                    retry_res = await retry_register_with_status_false(job.payload, err_txt)
 
                     if isinstance(retry_res, dict) and retry_res.get("ok") is True:
                         await mark_register_job_success(
                             job.job_id,
                             result=retry_res,
-                            note="success_after_status_false_retry",
+                            note="success_after_extended_timeout_retry",
                             original_error=str(err_txt),
                         )
                         REGISTER_JOBS[job.job_id]["retry_with_status_false"] = True
+                        REGISTER_JOBS[job.job_id]["auto_retry_count"] = int(REGISTER_JOBS[job.job_id].get("auto_retry_count") or 0) + 1
                         await persist_job_update(job.job_id)
                         logger.info(
-                            f"[QUEUE] job success after status=False retry job_id={job.job_id}"
+                            f"[QUEUE] job success after extended timeout retry job_id={job.job_id}"
                         )
                     elif should_treat_register_as_success(job.user_id, retry_res.get("text") if isinstance(retry_res, dict) else str(retry_res)):
                         retry_err_txt = retry_res.get("text") if isinstance(retry_res, dict) else str(retry_res)
                         await mark_register_job_success(
                             job.job_id,
                             result={"ok": True, "status": 200},
-                            note="success_after_status_false_existing_user_check",
+                            note="success_after_extended_timeout_existing_user_check",
                             original_error=str(retry_err_txt),
                         )
                         REGISTER_JOBS[job.job_id]["retry_with_status_false"] = True
+                        REGISTER_JOBS[job.job_id]["auto_retry_count"] = int(REGISTER_JOBS[job.job_id].get("auto_retry_count") or 0) + 1
                         await persist_job_update(job.job_id)
                         logger.info(
-                            f"[QUEUE] job normalized to success after status=False retry existing-user check job_id={job.job_id}"
+                            f"[QUEUE] job normalized to success after extended timeout retry existing-user check job_id={job.job_id}"
                         )
                     else:
                         retry_err_txt = retry_res.get("text") if isinstance(retry_res, dict) else str(retry_res)
@@ -706,13 +736,14 @@ async def _register_worker(worker_idx: int, bot):
                             "status": "failed",
                             "error": str(retry_err_txt),
                             "updated_at": now_str(),
-                            "note": "status_false_retry_failed",
+                            "note": "extended_timeout_retry_failed",
                             "retry_with_status_false": True,
+                            "auto_retry_count": int(REGISTER_JOBS[job.job_id].get("auto_retry_count") or 0) + 1,
                             "original_error": str(err_txt),
                         })
                         await persist_job_update(job.job_id)
                         logger.error(
-                            f"[QUEUE] status=False retry failed job_id={job.job_id} err={str(retry_err_txt)[:200]}"
+                            f"[QUEUE] extended timeout retry failed job_id={job.job_id} err={str(retry_err_txt)[:200]}"
                         )
                 else:
                     REGISTER_JOBS[job.job_id].update({

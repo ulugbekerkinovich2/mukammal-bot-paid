@@ -32,6 +32,9 @@ DTM_READ_URL = os.getenv("DTM_READ_URL", "https://dtmpaperreaderapi.mentalaba.uz
 REGISTER_TIMEOUT_SEC = int(os.getenv("REGISTER_TIMEOUT_SEC", "300"))   # 5 min default
 REGISTER_CONNECT_SEC = int(os.getenv("REGISTER_CONNECT_SEC", "30"))
 REGISTER_RETRIES = int(os.getenv("REGISTER_RETRIES", "2"))
+REGISTER_RETRY_TIMEOUT_SEC = int(os.getenv("REGISTER_RETRY_TIMEOUT_SEC", "480"))
+REGISTER_RETRY_CONNECT_SEC = int(os.getenv("REGISTER_RETRY_CONNECT_SEC", "45"))
+REGISTER_RETRY_ATTEMPTS = int(os.getenv("REGISTER_RETRY_ATTEMPTS", "4"))
 
 # Oddiy GET/ADS lar uchun kichik timeout
 DEFAULT_TIMEOUT_SEC = int(os.getenv("DEFAULT_TIMEOUT_SEC", "25"))
@@ -177,6 +180,8 @@ async def register_user(
     group_name: str = "",
     retries: int = REGISTER_RETRIES,
     status: bool = True,
+    timeout_total: Optional[int] = None,
+    timeout_connect: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Register uchun timeout katta:
@@ -200,11 +205,14 @@ async def register_user(
         status=status,
     )
 
+    timeout_total = int(timeout_total or REGISTER_TIMEOUT_SEC)
+    timeout_connect = int(timeout_connect or REGISTER_CONNECT_SEC)
+
     logger.info(
         f"\n\n========== REGISTER REQUEST ==========\n"
         f"URL: {MAIN_URL}\n"
         f"PAYLOAD: {payload}\n"
-        f"TIMEOUT: {REGISTER_TIMEOUT_SEC} CONNECT: {REGISTER_CONNECT_SEC} RETRIES: {retries}\n"
+        f"TIMEOUT: {timeout_total} CONNECT: {timeout_connect} RETRIES: {retries}\n"
         f"======================================\n"
     )
 
@@ -214,8 +222,8 @@ async def register_user(
         json_data=payload,
         headers={"Content-Type": "application/json"},
         retries=retries,
-        timeout_total=REGISTER_TIMEOUT_SEC,
-        timeout_connect=REGISTER_CONNECT_SEC,
+        timeout_total=timeout_total,
+        timeout_connect=timeout_connect,
     )
 
     logger.info(
