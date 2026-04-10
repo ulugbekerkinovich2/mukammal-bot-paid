@@ -944,8 +944,6 @@ async def startup_register_services(bot, workers: int = 2):
 # ----------------------------
 def ui_lang_kb(show_result_btn=False):
     kb = InlineKeyboardMarkup(row_width=2)
-    if show_result_btn:
-        kb.row(InlineKeyboardButton("📊 Mening natijam", callback_data="show_my_result_callback"))
     kb.row(
         InlineKeyboardButton("🇺🇿 O‘zbekcha", callback_data="ui:uz"),
         InlineKeyboardButton("🇷🇺 Русский", callback_data="ui:ru"),
