@@ -17,6 +17,14 @@
 # if __name__ == '__main__':
 #     # executor.start_polling(dp, on_startup=on_startup)
 #     executor.start_polling(dp, on_startup=lambda _: startup(), on_shutdown=lambda _: shutdown())
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+
 from aiogram import executor
 
 from loader import dp
@@ -33,5 +41,3 @@ async def on_startup(dispatcher):
 
 if __name__ == "__main__":
     executor.start_polling(dp, on_startup=on_startup, skip_updates=True)
-    
-    
