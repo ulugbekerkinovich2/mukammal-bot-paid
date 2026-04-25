@@ -16,6 +16,7 @@ BASE_URL = env.str("BASE_URL")
 REDIS_URL = env.str("REDIS_URL")
 SECRET_KEY = env.str("SECRET_KEY")
 RESULTS_FILE_PATH = env.str("RESULTS_FILE_PATH", "data/natijalar.xlsx")
+WEBAPP_URL = env.str("WEBAPP_URL", "https://dtm.your-domain.uz/online-test/")
 # SUBJECTS_MAP = {
 #     "Matematika": {
 #         "id": 20,
