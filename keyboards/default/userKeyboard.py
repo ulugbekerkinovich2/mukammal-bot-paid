@@ -1,15 +1,12 @@
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, WebAppInfo
-
-from data.config import WEBAPP_URL
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 keyboard_user = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton("📞Raqamni yuborish", request_contact=True)],
         [KeyboardButton("📊 Mening natijam")],
-        [KeyboardButton("📝 Online test", web_app=WebAppInfo(url=WEBAPP_URL))],
+        [KeyboardButton("🏠 Bosh menyu")],
     ],
-    resize_keyboard=True
-
+    resize_keyboard=True,
 )
 
 
@@ -29,7 +26,7 @@ adminKeyboard_user = ReplyKeyboardMarkup(
         [KeyboardButton("📊 Admin Panel")],
         [KeyboardButton("📞Raqamni yuborish", request_contact=True)],
         [KeyboardButton("📊 Mening natijam")],
-        [KeyboardButton("📝 Online test", web_app=WebAppInfo(url=WEBAPP_URL))],
+        [KeyboardButton("🏠 Bosh menyu")],
     ],
-    resize_keyboard=True
+    resize_keyboard=True,
 )

@@ -98,29 +98,38 @@ async def _send_dtm_read_result(message: types.Message, payload: dict):
 
     upload_image_fixed = fix_url(payload.get("upload_image", "-"))
     pdf_file_fixed = fix_url(payload.get("pdf_file", "-"))
-    
+
     upload_image = html.escape(str(upload_image_fixed))
     pdf_file = html.escape(str(pdf_file_fixed))
-    
+
     total_point = payload.get("total_point", "-")
     updated_answers = payload.get("updated_answers", "-")
     total_detected = payload.get("total_detected", "-")
     book_id = payload.get("book_id", "-")
     full_name = html.escape(str(payload.get("full_name", "")).strip())
-    detail_point = payload.get("detail_point") or {}
+    subjects = payload.get("subjects") or []
     image_link = f'<a href="{upload_image}">Rasmni ochish</a>' if str(upload_image_fixed).startswith("http") else upload_image
     pdf_link = f'<a href="{pdf_file}">PDFni ochish</a>' if str(pdf_file_fixed).startswith("http") else pdf_file
     full_name_line = f"👤 <b>F.I.Sh:</b> <code>{full_name}</code>\n" if full_name else ""
+
+    subject_lines = ""
+    for s in subjects:
+        name = html.escape(str(s.get("name", "-")))
+        score = s.get("score", s.get("ball", "-"))
+        correct = s.get("correct")
+        allocated = s.get("allocated")
+        if correct is not None and allocated is not None:
+            subject_lines += f"🔹 <b>{name}:</b> <code>{score}</code> ({correct}/{allocated})\n"
+        else:
+            subject_lines += f"🔹 <b>{name}:</b> <code>{score}</code>\n"
 
     summary = (
         "✅ <b>DTM natija tayyor</b>\n\n"
         f"{full_name_line}"
         f"🆔 <b>Book ID:</b> <code>{book_id}</code>\n"
         f"📊 <b>Umumiy ball:</b> <code>{total_point}</code>\n\n"
-        "📈 <b>Ball tafsiloti</b>\n"
-        f"Majburiy: <code>{detail_point.get('mandatory', '-')}</code>\n"
-        f"Asosiy: <code>{detail_point.get('primary', '-')}</code>\n"
-        f"Ikkinchi fan: <code>{detail_point.get('secondary', '-')}</code>\n\n"
+        "📈 <b>Fanlar bo'yicha:</b>\n"
+        f"{subject_lines}\n"
         "📌 <b>Statistika</b>\n"
         f"Yangilangan javoblar: <code>{updated_answers}</code>\n"
         f"Aniqlangan jami: <code>{total_detected}</code>\n\n"
