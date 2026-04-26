@@ -16,14 +16,14 @@ logger = logging.getLogger(__name__)
 # =========================
 # CONFIG (ENDPOINTS)
 # =========================
-MAIN_URL = os.getenv("REGISTER_URL", "https://dtmpaperreaderapi.mentalaba.uz/api/v1/auth/register").strip()
-BASE_API_URL = os.getenv("BASE_URL", "https://dtmpaperreaderapi.mentalaba.uz/api/v1").strip()
+MAIN_URL = os.getenv("REGISTER_URL", "https://dtm-api.misterdev.uz/api/v1/auth/register").strip()
+BASE_API_URL = os.getenv("BASE_URL", "https://dtm-api.misterdev.uz/api/v1").strip()
 
 ADS_BOTS = os.getenv("ADS_BOTS", "https://ads.misterdev.uz/bots/get").strip()
 ADS_USERS = os.getenv("ADS_USERS", "https://ads.misterdev.uz/users/get").strip()
 ADS_USERS_POST = os.getenv("ADS_USERS_POST", "https://ads.misterdev.uz/users/post").strip()
 ADS_USERS_PUT = os.getenv("ADS_USERS_PUT", "https://ads.misterdev.uz/users/put/{id}").strip()
-DTM_READ_URL = os.getenv("DTM_READ_URL", "https://dtmpaperreaderapi.mentalaba.uz/api/v1/dtm/read").strip()
+DTM_READ_URL = os.getenv("DTM_READ_URL", "https://dtm-api.misterdev.uz/api/v1/dtm/read").strip()
 
 # =========================
 # TIMEOUT PROFILES

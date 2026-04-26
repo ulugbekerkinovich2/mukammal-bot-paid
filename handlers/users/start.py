@@ -235,6 +235,17 @@ TEXTS = {
     },
 
     "success": {"uz": "✅ Ro‘yxatdan muvaffaqiyatli o‘tdingiz!", "ru": "✅ Регистрация прошла успешно!"},
+    "choose_test_type": {
+        "uz": "🎯 Test turini tanlang:\n\n📄 <b>Offline test</b> — varaqdagi DTM testni rasmga olib yuborish va natija olish\n🌐 <b>Online test</b> — Telegram ichida 90 savol, 3 soat",
+        "ru": "🎯 Выберите тип теста:\n\n📄 <b>Offline тест</b> — сфотографировать бумажный DTM-тест и получить результат\n🌐 <b>Online тест</b> — 90 вопросов внутри Telegram, 3 часа",
+    },
+    "btn_offline_test": {"uz": "📄 Offline test", "ru": "📄 Offline тест"},
+    "btn_online_test": {"uz": "🌐 Online test", "ru": "🌐 Online тест"},
+    "btn_reregister": {"uz": "🔄 Qayta ro'yxatdan o'tish", "ru": "🔄 Зарегистрироваться заново"},
+    "offline_menu_text": {
+        "uz": "📄 <b>Offline test rejimi</b>\n\nQuyidagi tugmalardan foydalaning. Natijangizni ko'rish yoki sertifikat olish uchun tugmalar pastda.",
+        "ru": "📄 <b>Offline тест режим</b>\n\nИспользуйте кнопки ниже. Кнопки для просмотра результата и получения сертификата находятся внизу.",
+    },
     "edit_exam_lang": {"uz": "Imtihon tilini qayta tanlang:", "ru": "Выберите язык экзамена снова:"},
     "selected_exam_lang": {"uz": "✅ Tanlandi:", "ru": "✅ Выбрано:"},
 
@@ -1460,6 +1471,29 @@ def build_confirm_text(ui_lang: str, data: dict) -> str:
     return "\n".join(lines)
 
 # ----------------------------
+# Test type chooser
+# ----------------------------
+def test_type_kb(ui_lang: str = "uz") -> types.InlineKeyboardMarkup:
+    from data.config import WEBAPP_URL
+    kb = types.InlineKeyboardMarkup(row_width=1)
+    kb.add(
+        types.InlineKeyboardButton(text=tr(ui_lang, "btn_offline_test"), callback_data="test_type_offline"),
+        types.InlineKeyboardButton(text=tr(ui_lang, "btn_online_test"), web_app=types.WebAppInfo(url=WEBAPP_URL)),
+        types.InlineKeyboardButton(text=tr(ui_lang, "btn_reregister"), callback_data="reregister"),
+    )
+    return kb
+
+
+async def show_test_type_menu(target, ui_lang: str = "uz"):
+    """target — Message yoki CallbackQuery.message"""
+    await target.answer(
+        tr(ui_lang, "choose_test_type"),
+        parse_mode="HTML",
+        reply_markup=test_type_kb(ui_lang),
+    )
+
+
+# ----------------------------
 # Subscribe check
 # ----------------------------
 async def is_subscribed(user_id: int, bot) -> bool:
@@ -1479,25 +1513,20 @@ async def start_cmd(message: types.Message, state: FSMContext):
     # Queue workerlarni ishga tushiramiz (1 marta)
     await ensure_register_workers(message.bot, workers=2)
 
-    # 1. Obunani tekshiramiz
-    is_sub = await is_subscribed(message.from_user.id, message.bot)
-    if not is_sub:
-        await message.answer(
-            "Botdan foydalanish uchun rasmiy kanalimizga a'zo bo'ling! ✅",
-            reply_markup=sub_kb()
-        )
-        return
+    # 1. Obunani tekshiramiz (vaqtincha o'chirilgan)
+    # is_sub = await is_subscribed(message.from_user.id, message.bot)
+    # if not is_sub:
+    #     await message.answer(
+    #         "Botdan foydalanish uchun rasmiy kanalimizga a'zo bo'ling! ✅",
+    #         reply_markup=sub_kb()
+    #     )
+    #     return
 
     # 2. Ro'yxatdan o'tganligini tekshiramiz
     if check_user_exists(message.from_user.id):
-        from data.config import ADMINS
-        from keyboards.default.userKeyboard import adminKeyboard_user
-        
-        reply_markup = adminKeyboard_user if str(message.from_user.id) in ADMINS else keyboard_user
-        await message.answer(
-            "Xush kelibsiz! Natijangizni quyidagi tugma orqali ko'rishingiz mumkin.",
-            reply_markup=reply_markup
-        )
+        data = await state.get_data()
+        ui_lang = data.get("ui_lang", "uz")
+        await show_test_type_menu(message, ui_lang)
         return
 
     # 3. Natijasi bormi?
@@ -1511,6 +1540,47 @@ async def start_cmd(message: types.Message, state: FSMContext):
     )
     await Registration.ui_lang.set()
 
+@dp.message_handler(lambda m: m.text == "🏠 Bosh menyu", state="*")
+async def back_to_main_menu(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    ui_lang = data.get("ui_lang", "uz")
+    await show_test_type_menu(message, ui_lang)
+
+
+@dp.callback_query_handler(lambda c: c.data == "test_type_offline", state="*")
+async def test_type_offline_cb(call: types.CallbackQuery, state: FSMContext):
+    await call.answer()
+    data = await state.get_data()
+    ui_lang = data.get("ui_lang", "uz")
+
+    from data.config import ADMINS
+    from keyboards.default.userKeyboard import adminKeyboard_user
+
+    reply_markup = adminKeyboard_user if str(call.from_user.id) in ADMINS else keyboard_user
+    await call.bot.send_message(
+        call.message.chat.id,
+        tr(ui_lang, "offline_menu_text"),
+        parse_mode="HTML",
+        reply_markup=reply_markup,
+    )
+
+
+@dp.callback_query_handler(lambda c: c.data == "reregister", state="*")
+async def reregister_cb(call: types.CallbackQuery, state: FSMContext):
+    await call.answer()
+    await state.finish()
+
+    res = await get_dtm_result(call.from_user.id)
+    show_btn = bool(extract_dtm_result_data(res))
+
+    await send_clean(
+        call.message, state,
+        f"{TEXTS['choose_ui_lang']['uz']} / {TEXTS['choose_ui_lang']['ru']}",
+        reply_markup=ui_lang_kb(show_result_btn=bool(show_btn)),
+    )
+    await Registration.ui_lang.set()
+
+
 @dp.callback_query_handler(lambda c: c.data == "check_sub", state="*")
 async def check_sub(call: types.CallbackQuery, state: FSMContext):
     ok = await is_subscribed(call.from_user.id, call.bot)
@@ -1519,19 +1589,16 @@ async def check_sub(call: types.CallbackQuery, state: FSMContext):
         return
 
     await call.answer("✅ Obuna tasdiqlandi")
-    
+
     # 1. Ro'yxatdan o'tganmi?
     if check_user_exists(call.from_user.id):
-        from data.config import ADMINS
-        from keyboards.default.userKeyboard import adminKeyboard_user
-        reply_markup = adminKeyboard_user if str(call.from_user.id) in ADMINS else keyboard_user
-        
-        await call.message.delete()
-        await call.bot.send_message(
-            call.from_user.id,
-            "Xush kelibsiz! Natijangizni quyidagi tugma orqali ko'rishingiz mumkin.",
-            reply_markup=reply_markup
-        )
+        data = await state.get_data()
+        ui_lang = data.get("ui_lang", "uz")
+        try:
+            await call.message.delete()
+        except Exception:
+            pass
+        await show_test_type_menu(call.message, ui_lang)
         await state.finish()
         return
 
@@ -2010,6 +2077,8 @@ async def complete_register_success(
     except Exception:
         await call.bot.send_message(call.message.chat.id, success_text)
 
+    await show_test_type_menu(call.message, ui_lang)
+
     await notify_admins(call.bot, (
         f"🧾 <b>REGISTER SUCCESS (BOT QUEUE)</b>\n"
         f"🕒 <b>Time:</b> {now_str()}\n"
@@ -2171,47 +2240,44 @@ async def show_my_result(message: types.Message, state: FSMContext):
     try:
         # Get result from API
         res = await get_dtm_result(user_id)
-        
+        status = res.get("status") if isinstance(res, dict) else 0
+
         data = extract_dtm_result_data(res)
         if not data:
-            await message.answer("❌ Sizning natijangiz hali tayyor emas yoki kiritilmagan.")
+            if status == 401:
+                err_text = (
+                    "⚠️ Server konfiguratsiyasida xatolik (API key noto'g'ri).\n"
+                    "Iltimos, administrator bilan bog'laning."
+                )
+            elif status == 404:
+                err_text = "❌ Sizning natijangiz hali tayyor emas yoki kiritilmagan."
+            else:
+                err_text = (
+                    "❌ Natijani olishda muammo yuz berdi.\n"
+                    f"Status: <code>{status}</code>\n"
+                    "Iltimos, biroz vaqtdan so'ng qayta urinib ko'ring."
+                )
+            await message.answer(err_text, parse_mode="HTML")
             try: await msg.delete()
             except: pass
             return
 
         formatted_text = format_dtm_result(data)
-        
+
         if not formatted_text:
             await message.answer("❌ Sizning natijangiz hali tayyor emas yoki kiritilmagan.")
             try: await msg.delete()
             except: pass
             return
-        
+
         file_url = data.get("file_url")
         if file_url and "127.0.0.1:8000" in file_url:
             file_url = file_url.replace("http://127.0.0.1:8000", "https://dtmpaperreaderapi.mentalaba.uz")
-        
-        kb = certificate_download_kb()
-        if file_url:
-            try:
-                await message.answer_document(
-                    document=file_url,
-                    caption=f"<b>Test natijangiz tayyor.</b>\n\n{formatted_text}",
-                    parse_mode="HTML",
-                    reply_markup=kb,
-                )
-                try:
-                    await msg.delete()
-                except:
-                    pass
-                return
-            except Exception as document_err:
-                logger.error(f"Result document send error: {document_err}")
-                kb.row(InlineKeyboardButton("📄 PDF Natijani yuklash", url=file_url))
-        else:
-            kb = certificate_download_kb()
 
-        sent_result = await message.answer(
+        kb = certificate_download_kb()
+
+        # 1) Natija matnini darhol yuboramiz — PDF kutmaymiz
+        await message.answer(
             f"<b>Test natijangiz tayyor.</b>\n\n{formatted_text}",
             parse_mode="HTML",
             disable_web_page_preview=True,
@@ -2219,6 +2285,29 @@ async def show_my_result(message: types.Message, state: FSMContext):
         )
         try: await msg.delete()
         except: pass
+
+        # 2) PDFni alohida fonda yuboramiz (Telegram file_url'dan yuklab oladi)
+        if file_url:
+            pdf_progress = await message.answer("📄 PDF tayyorlanmoqda...")
+            try:
+                await message.answer_document(
+                    document=file_url,
+                    caption="📄 Sizning natijangiz PDF formatida",
+                    parse_mode="HTML",
+                )
+                try: await pdf_progress.delete()
+                except: pass
+            except Exception as document_err:
+                logger.error(f"Result document send error: {document_err}")
+                fallback_kb = InlineKeyboardMarkup().add(
+                    InlineKeyboardButton("📄 PDF Natijani yuklash", url=file_url)
+                )
+                try: await pdf_progress.delete()
+                except: pass
+                await message.answer(
+                    "PDFni quyidagi tugma orqali yuklab olishingiz mumkin:",
+                    reply_markup=fallback_kb,
+                )
         
     except Exception as e:
         logger.error(f"Error in show_my_result: {e}")
