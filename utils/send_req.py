@@ -146,6 +146,7 @@ def _register_payload(
     region: str,
     group_name: str,
     status: bool = True,
+    test_type: str = "offline",
 ) -> Dict[str, Any]:
     return {
         "bot_id": str(bot_id),
@@ -162,6 +163,7 @@ def _register_payload(
         "region": region or "",
         "group_name": group_name or "",
         "status": status,
+        "test_type": test_type,
     }
 
 
@@ -180,6 +182,7 @@ async def register_user(
     group_name: str = "",
     retries: int = REGISTER_RETRIES,
     status: bool = True,
+    test_type: str = "offline",
     timeout_total: Optional[int] = None,
     timeout_connect: Optional[int] = None,
 ) -> Dict[str, Any]:
@@ -203,6 +206,7 @@ async def register_user(
         region=region,
         group_name=group_name,
         status=status,
+        test_type=test_type,
     )
 
     timeout_total = int(timeout_total or REGISTER_TIMEOUT_SEC)
@@ -500,14 +504,14 @@ async def get_dtm_result(document_code):
 
 def check_user_exists(chat_id):
     """
-    User bazada borligini tekshiradi.
+    User bazada borligini tekshiradi (har qanday test_type bilan).
     """
     import os
     import psycopg2
     db_name = os.getenv("db_name")
     if db_name:
         db_name = db_name.strip('"')
-    
+
     try:
         conn = psycopg2.connect(
             host=os.getenv("db_host"),
@@ -522,6 +526,40 @@ def check_user_exists(chat_id):
                 return cur.fetchone() is not None
     except Exception as e:
         print(f"DATABASE CHECK_USER ERROR => {e}")
+        return False
+    finally:
+        if 'conn' in locals() and conn:
+            conn.close()
+
+
+def check_user_exists_by_type(chat_id, test_type: str = "offline"):
+    """
+    User bazada (chat_id, test_type) juftligi bilan borligini tekshiradi.
+    True = registratsiya bor, False = registratsiya yo'q (yoki DB xato).
+    """
+    import os
+    import psycopg2
+    db_name = os.getenv("db_name")
+    if db_name:
+        db_name = db_name.strip('"')
+
+    try:
+        conn = psycopg2.connect(
+            host=os.getenv("db_host"),
+            database=db_name,
+            user=os.getenv("db_user"),
+            password=os.getenv("db_pass"),
+            port=os.getenv("db_port"),
+        )
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id FROM users WHERE chat_id = %s AND test_type = %s LIMIT 1",
+                    (str(chat_id), test_type),
+                )
+                return cur.fetchone() is not None
+    except Exception as e:
+        print(f"DATABASE CHECK_USER_BY_TYPE ERROR => {e}")
         return False
     finally:
         if 'conn' in locals() and conn:
