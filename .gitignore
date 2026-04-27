@@ -128,4 +128,6 @@ dmypy.json
 # Pyre type checker
 .pyre/
 .idea/*
-.envregister_jobs.json
+.env
+register_jobs.json
+user_intents.json

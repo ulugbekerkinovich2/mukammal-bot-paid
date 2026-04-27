@@ -25,6 +25,7 @@ from utils.send_req import (
     register_user,
     get_dtm_result,
     check_user_exists,
+    check_user_exists_by_type,
     REGISTER_RETRY_TIMEOUT_SEC,
     REGISTER_RETRY_CONNECT_SEC,
     REGISTER_RETRY_ATTEMPTS,
@@ -62,6 +63,70 @@ FAILED_RETRY_MAX_COUNT = int(os.getenv("FAILED_RETRY_MAX_COUNT", "4"))
 # =========================
 JOBS_PATH = os.getenv("REGISTER_JOBS_PATH", "register_jobs.json")
 JOBS_FILE_LOCK = asyncio.Lock()
+
+# Per-user test_type flags persistence
+# Schema: {chat_id: {"offline": bool, "online": bool, "last": "offline"|"online"}}
+USER_INTENTS_PATH = os.getenv("USER_INTENTS_PATH", "user_intents.json")
+USER_INTENTS_LOCK = asyncio.Lock()
+USER_INTENTS: Dict[str, Dict[str, Any]] = {}
+
+
+def _load_user_intents() -> None:
+    global USER_INTENTS
+    try:
+        with open(USER_INTENTS_PATH, "r", encoding="utf-8") as f:
+            raw = json.load(f) or {}
+    except (FileNotFoundError, json.JSONDecodeError):
+        raw = {}
+    USER_INTENTS = {}
+    for cid, val in raw.items():
+        if isinstance(val, str):
+            USER_INTENTS[cid] = {
+                "offline": val == "offline",
+                "online": val == "online",
+                "last": val,
+            }
+        elif isinstance(val, dict):
+            USER_INTENTS[cid] = {
+                "offline": bool(val.get("offline")),
+                "online": bool(val.get("online")),
+                "last": val.get("last") or ("online" if val.get("online") else "offline"),
+            }
+
+
+async def _save_user_intents() -> None:
+    async with USER_INTENTS_LOCK:
+        tmp = USER_INTENTS_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(USER_INTENTS, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, USER_INTENTS_PATH)
+
+
+def has_user_flag(chat_id: int, intent: str) -> bool:
+    return bool(USER_INTENTS.get(str(chat_id), {}).get(intent))
+
+
+async def set_user_intent(chat_id: int, intent: str) -> None:
+    rec = USER_INTENTS.setdefault(
+        str(chat_id), {"offline": False, "online": False, "last": intent}
+    )
+    rec[intent] = True
+    rec["last"] = intent
+    await _save_user_intents()
+
+
+def get_user_intent(chat_id: int) -> Optional[str]:
+    """Returns the most recently used flow ('last'), or None if user has no flags."""
+    rec = USER_INTENTS.get(str(chat_id))
+    return rec.get("last") if rec else None
+
+
+async def clear_user_intent(chat_id: int) -> None:
+    if USER_INTENTS.pop(str(chat_id), None) is not None:
+        await _save_user_intents()
+
+
+_load_user_intents()
 
 @dataclass
 class RegisterJob:
@@ -236,8 +301,8 @@ TEXTS = {
 
     "success": {"uz": "✅ Ro‘yxatdan muvaffaqiyatli o‘tdingiz!", "ru": "✅ Регистрация прошла успешно!"},
     "choose_test_type": {
-        "uz": "🎯 Test turini tanlang:\n\n📄 <b>Offline test</b> — varaqdagi DTM testni rasmga olib yuborish va natija olish\n🌐 <b>Online test</b> — Telegram ichida 90 savol, 3 soat",
-        "ru": "🎯 Выберите тип теста:\n\n📄 <b>Offline тест</b> — сфотографировать бумажный DTM-тест и получить результат\n🌐 <b>Online тест</b> — 90 вопросов внутри Telegram, 3 часа",
+        "uz": "🎯 Tanlang:",
+        "ru": "🎯 Выберите:",
     },
     "btn_offline_test": {"uz": "📄 Offline test", "ru": "📄 Offline тест"},
     "btn_online_test": {"uz": "🌐 Online test", "ru": "🌐 Online тест"},
@@ -245,6 +310,19 @@ TEXTS = {
     "offline_menu_text": {
         "uz": "📄 <b>Offline test rejimi</b>\n\nQuyidagi tugmalardan foydalaning. Natijangizni ko'rish yoki sertifikat olish uchun tugmalar pastda.",
         "ru": "📄 <b>Offline тест режим</b>\n\nИспользуйте кнопки ниже. Кнопки для просмотра результата и получения сертификата находятся внизу.",
+    },
+    "online_ready": {
+        "uz": "🌐 <b>Online test</b>\n\nRo'yxatdan muvaffaqiyatli o'tdingiz. Quyidagi tugmani bosing va testni boshlang.\n\n⏱ 90 savol, 3 soat.",
+        "ru": "🌐 <b>Online тест</b>\n\nВы успешно зарегистрированы. Нажмите кнопку ниже и начните тест.\n\n⏱ 90 вопросов, 3 часа.",
+    },
+    "btn_start_online_test": {"uz": "🌐 Testni boshlash", "ru": "🌐 Начать тест"},
+    "welcome_back_offline": {
+        "uz": "👋 Xush kelibsiz! Pastdagi tugmalardan foydalaning.",
+        "ru": "👋 Добро пожаловать! Используйте кнопки ниже.",
+    },
+    "welcome_back_online": {
+        "uz": "👋 Xush kelibsiz! Online testni boshlash uchun quyidagi tugmani bosing.",
+        "ru": "👋 Добро пожаловать! Нажмите кнопку ниже, чтобы начать online тест.",
     },
     "edit_exam_lang": {"uz": "Imtihon tilini qayta tanlang:", "ru": "Выберите язык экзамена снова:"},
     "selected_exam_lang": {"uz": "✅ Tanlandi:", "ru": "✅ Выбрано:"},
@@ -1479,7 +1557,6 @@ def test_type_kb(ui_lang: str = "uz") -> types.InlineKeyboardMarkup:
     kb.add(
         types.InlineKeyboardButton(text=tr(ui_lang, "btn_offline_test"), callback_data="test_type_offline"),
         types.InlineKeyboardButton(text=tr(ui_lang, "btn_online_test"), web_app=types.WebAppInfo(url=WEBAPP_URL)),
-        types.InlineKeyboardButton(text=tr(ui_lang, "btn_reregister"), callback_data="reregister"),
     )
     return kb
 
@@ -1490,6 +1567,105 @@ async def show_test_type_menu(target, ui_lang: str = "uz"):
         tr(ui_lang, "choose_test_type"),
         parse_mode="HTML",
         reply_markup=test_type_kb(ui_lang),
+    )
+
+
+def pre_register_test_type_kb() -> types.InlineKeyboardMarkup:
+    kb = types.InlineKeyboardMarkup(row_width=1)
+    kb.add(
+        types.InlineKeyboardButton(
+            text=f"{TEXTS['btn_offline_test']['uz']} / {TEXTS['btn_offline_test']['ru']}",
+            callback_data="pre_choose_offline",
+        ),
+        types.InlineKeyboardButton(
+            text=f"{TEXTS['btn_online_test']['uz']} / {TEXTS['btn_online_test']['ru']}",
+            callback_data="pre_choose_online",
+        ),
+    )
+    return kb
+
+
+async def show_pre_register_test_type(message: types.Message, state: Optional[FSMContext] = None):
+    text = f"{TEXTS['choose_test_type']['uz']} / {TEXTS['choose_test_type']['ru']}"
+    if state is not None:
+        await send_clean(
+            message, state, text,
+            parse_mode="HTML",
+            reply_markup=pre_register_test_type_kb(),
+        )
+    else:
+        await message.answer(
+            text,
+            parse_mode="HTML",
+            reply_markup=pre_register_test_type_kb(),
+        )
+
+
+def online_ready_kb(ui_lang: str = "uz") -> types.InlineKeyboardMarkup:
+    from data.config import WEBAPP_URL
+    kb = types.InlineKeyboardMarkup(row_width=1)
+    kb.add(
+        types.InlineKeyboardButton(
+            text=tr(ui_lang, "btn_start_online_test"),
+            web_app=types.WebAppInfo(url=WEBAPP_URL),
+        ),
+    )
+    return kb
+
+
+async def _show_offline_menu(target_message: types.Message, user_id: int, ui_lang: str = "uz"):
+    from data.config import ADMINS
+    from keyboards.default.userKeyboard import adminKeyboard_user
+    reply_markup = adminKeyboard_user if str(user_id) in ADMINS else keyboard_user
+    await target_message.bot.send_message(
+        target_message.chat.id,
+        tr(ui_lang, "offline_menu_text"),
+        parse_mode="HTML",
+        reply_markup=reply_markup,
+    )
+
+
+async def _show_offline_greeting(target_message: types.Message, user_id: int, ui_lang: str = "uz"):
+    from data.config import ADMINS
+    from keyboards.default.userKeyboard import adminKeyboard_user
+    reply_markup = adminKeyboard_user if str(user_id) in ADMINS else keyboard_user
+    await target_message.bot.send_message(
+        target_message.chat.id,
+        tr(ui_lang, "welcome_back_offline"),
+        reply_markup=reply_markup,
+    )
+
+
+async def _show_online_greeting(target_message: types.Message, user_id: int, ui_lang: str = "uz"):
+    from data.config import ADMINS
+    from keyboards.default.userKeyboard import adminKeyboard_user
+    reply_markup = adminKeyboard_user if str(user_id) in ADMINS else keyboard_user
+    await target_message.bot.send_message(
+        target_message.chat.id,
+        tr(ui_lang, "welcome_back_online"),
+        reply_markup=reply_markup,
+    )
+    await target_message.bot.send_message(
+        target_message.chat.id,
+        tr(ui_lang, "btn_start_online_test"),
+        reply_markup=online_ready_kb(ui_lang),
+    )
+
+
+async def _show_online_ready(target_message: types.Message, user_id: int, ui_lang: str = "uz"):
+    from data.config import ADMINS
+    from keyboards.default.userKeyboard import adminKeyboard_user
+    reply_markup = adminKeyboard_user if str(user_id) in ADMINS else keyboard_user
+    await target_message.bot.send_message(
+        target_message.chat.id,
+        tr(ui_lang, "online_ready"),
+        parse_mode="HTML",
+        reply_markup=reply_markup,
+    )
+    await target_message.bot.send_message(
+        target_message.chat.id,
+        tr(ui_lang, "btn_start_online_test"),
+        reply_markup=online_ready_kb(ui_lang),
     )
 
 
@@ -1508,6 +1684,8 @@ async def is_subscribed(user_id: int, bot) -> bool:
 # ----------------------------
 @dp.message_handler(CommandStart(), state="*")
 async def start_cmd(message: types.Message, state: FSMContext):
+    # Avval oldingi flow ning bot xabarlarini o'chiramiz, keyin state ni reset qilamiz
+    await cleanup_bot_messages(message.bot, message.chat.id, state)
     await state.finish()
 
     # Queue workerlarni ishga tushiramiz (1 marta)
@@ -1522,30 +1700,9 @@ async def start_cmd(message: types.Message, state: FSMContext):
     #     )
     #     return
 
-    # 2. Ro'yxatdan o'tganligini tekshiramiz
-    if check_user_exists(message.from_user.id):
-        data = await state.get_data()
-        ui_lang = data.get("ui_lang", "uz")
-        await show_test_type_menu(message, ui_lang)
-        return
-
-    # 3. Natijasi bormi?
-    res = await get_dtm_result(message.from_user.id)
-    show_btn = bool(extract_dtm_result_data(res))
-
-    await send_clean(
-        message, state,
-        f"{TEXTS['choose_ui_lang']['uz']} / {TEXTS['choose_ui_lang']['ru']}",
-        reply_markup=ui_lang_kb(show_result_btn=bool(show_btn))
-    )
-    await Registration.ui_lang.set()
-
-@dp.message_handler(lambda m: m.text == "🏠 Bosh menyu", state="*")
-async def back_to_main_menu(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    ui_lang = data.get("ui_lang", "uz")
-    await show_test_type_menu(message, ui_lang)
-
+    # 2. Har doim chooser ko'rsatamiz — bir userda ikkala flow ham bo'lishi mumkin,
+    # callback (pre_choose_*) kerakli ish-harakatni qiladi (greet vs register).
+    await show_pre_register_test_type(message, state)
 
 @dp.callback_query_handler(lambda c: c.data == "test_type_offline", state="*")
 async def test_type_offline_cb(call: types.CallbackQuery, state: FSMContext):
@@ -1569,6 +1726,7 @@ async def test_type_offline_cb(call: types.CallbackQuery, state: FSMContext):
 async def reregister_cb(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
     await state.finish()
+    await clear_user_intent(call.from_user.id)
 
     res = await get_dtm_result(call.from_user.id)
     show_btn = bool(extract_dtm_result_data(res))
@@ -1579,6 +1737,53 @@ async def reregister_cb(call: types.CallbackQuery, state: FSMContext):
         reply_markup=ui_lang_kb(show_result_btn=bool(show_btn)),
     )
     await Registration.ui_lang.set()
+
+
+async def _start_registration_with_intent(call: types.CallbackQuery, state: FSMContext, intent: str):
+    await call.answer()
+    # Eski tracked xabarlarni o'chiramiz, so'ng FSM ni reset qilamiz
+    await cleanup_bot_messages(call.bot, call.message.chat.id, state)
+    await state.finish()
+
+    try:
+        await call.message.delete()
+    except Exception:
+        try:
+            await call.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+
+    # Faqat DB bo'yicha tekshiruv: (chat_id, test_type) bor bo'lsa — registratsiyasiz
+    # greeting; yo'q bo'lsa — to'liq registratsiya FSM.
+    if check_user_exists_by_type(call.from_user.id, intent):
+        await set_user_intent(call.from_user.id, intent)
+        ui_lang = "uz"
+        if intent == "online":
+            await _show_online_greeting(call.message, call.from_user.id, ui_lang)
+        else:
+            await _show_offline_greeting(call.message, call.from_user.id, ui_lang)
+        return
+
+    # DB da yo'q — to'liq registratsiya FSM
+    await state.update_data(test_intent=intent)
+    res = await get_dtm_result(call.from_user.id)
+    show_btn = bool(extract_dtm_result_data(res))
+    await send_clean(
+        call.message, state,
+        f"{TEXTS['choose_ui_lang']['uz']} / {TEXTS['choose_ui_lang']['ru']}",
+        reply_markup=ui_lang_kb(show_result_btn=bool(show_btn)),
+    )
+    await Registration.ui_lang.set()
+
+
+@dp.callback_query_handler(lambda c: c.data == "pre_choose_offline", state="*")
+async def pre_choose_offline_cb(call: types.CallbackQuery, state: FSMContext):
+    await _start_registration_with_intent(call, state, "offline")
+
+
+@dp.callback_query_handler(lambda c: c.data == "pre_choose_online", state="*")
+async def pre_choose_online_cb(call: types.CallbackQuery, state: FSMContext):
+    await _start_registration_with_intent(call, state, "online")
 
 
 @dp.callback_query_handler(lambda c: c.data == "check_sub", state="*")
@@ -1598,7 +1803,11 @@ async def check_sub(call: types.CallbackQuery, state: FSMContext):
             await call.message.delete()
         except Exception:
             pass
-        await show_test_type_menu(call.message, ui_lang)
+        intent = get_user_intent(call.from_user.id) or "offline"
+        if intent == "online":
+            await _show_online_greeting(call.message, call.from_user.id, ui_lang)
+        else:
+            await _show_offline_greeting(call.message, call.from_user.id, ui_lang)
         await state.finish()
         return
 
@@ -2001,6 +2210,7 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
             region=data.get("region"),
             group_name=data.get("class_letter"),
             status=True,
+            test_type=data.get("test_intent", "offline"),
         )
 
         REGISTER_JOBS[job_id] = {
@@ -2071,13 +2281,21 @@ async def complete_register_success(
     job_id: str,
     info: dict,
 ):
+    data = await state.get_data()
+    intent = data.get("test_intent")
+
     success_text = tr(ui_lang, "success")
     try:
         await call.message.edit_text(success_text, reply_markup=None)
     except Exception:
         await call.bot.send_message(call.message.chat.id, success_text)
 
-    await show_test_type_menu(call.message, ui_lang)
+    if intent == "online":
+        await _show_online_ready(call.message, call.from_user.id, ui_lang)
+        await set_user_intent(call.from_user.id, "online")
+    else:
+        await _show_offline_menu(call.message, call.from_user.id, ui_lang)
+        await set_user_intent(call.from_user.id, "offline")
 
     await notify_admins(call.bot, (
         f"🧾 <b>REGISTER SUCCESS (BOT QUEUE)</b>\n"
