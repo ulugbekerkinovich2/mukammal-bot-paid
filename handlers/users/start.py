@@ -1753,11 +1753,9 @@ async def _start_registration_with_intent(call: types.CallbackQuery, state: FSMC
         except Exception:
             pass
 
-    # Backend (DB) bo'yicha tekshiruv — lokal flag emas, source-of-truth
-    db_has = check_user_exists_by_type(call.from_user.id, intent)
-
-    if db_has:
-        # DB da bor — flag ni sync qilamiz va greeting ko'rsatamiz
+    # Faqat DB bo'yicha tekshiruv: (chat_id, test_type) bor bo'lsa — registratsiyasiz
+    # greeting; yo'q bo'lsa — to'liq registratsiya FSM.
+    if check_user_exists_by_type(call.from_user.id, intent):
         await set_user_intent(call.from_user.id, intent)
         ui_lang = "uz"
         if intent == "online":
@@ -1766,13 +1764,7 @@ async def _start_registration_with_intent(call: types.CallbackQuery, state: FSMC
             await _show_offline_greeting(call.message, call.from_user.id, ui_lang)
         return
 
-    # DB da yo'q — agar lokal flag noto'g'ri bo'lsa, tozalaymiz va registratsiya FSM
-    if has_user_flag(call.from_user.id, intent):
-        rec = USER_INTENTS.get(str(call.from_user.id))
-        if rec is not None:
-            rec[intent] = False
-            await _save_user_intents()
-
+    # DB da yo'q — to'liq registratsiya FSM
     await state.update_data(test_intent=intent)
     res = await get_dtm_result(call.from_user.id)
     show_btn = bool(extract_dtm_result_data(res))
