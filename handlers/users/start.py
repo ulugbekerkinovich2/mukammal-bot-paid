@@ -394,10 +394,11 @@ def pretty_register_error(raw: str, ui_lang: str = "uz") -> str:
         },
     }
 
-    if detail in mapping:
+    if isinstance(detail, str) and detail in mapping:
         return mapping[detail]["uz"] if ui_lang == "uz" else mapping[detail]["ru"]
 
-    return (f"❌ Ошибка: {detail}" if ui_lang == "ru" else f"❌ Xatolik: {detail}")
+    detail_str = detail if isinstance(detail, str) else json.dumps(detail, ensure_ascii=False)
+    return (f"❌ Ошибка: {detail_str}" if ui_lang == "ru" else f"❌ Xatolik: {detail_str}")
 
 
 def is_register_duplicate_error(error_text: str) -> bool:
@@ -2467,7 +2468,9 @@ async def show_my_result(message: types.Message, state: FSMContext):
                     "⚠️ Server konfiguratsiyasida xatolik (API key noto'g'ri).\n"
                     "Iltimos, administrator bilan bog'laning."
                 )
-            elif status == 404:
+            elif status == 404 or (status == 200 and isinstance(res, dict) and res.get("ok")):
+                # 200 + ok=True, lekin score yo'q → backend yozuvni qabul qilgan, lekin
+                # test hali baholanmagan
                 err_text = "❌ Sizning natijangiz hali tayyor emas yoki kiritilmagan."
             else:
                 err_text = (
