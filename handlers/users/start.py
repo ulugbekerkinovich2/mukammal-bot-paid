@@ -2239,6 +2239,50 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
             test_type=data.get("test_intent", "offline"),
         )
 
+        # ---- ONLINE: to’g’ridan API, queue kerak emas ----
+        if data.get("test_intent") == "online":
+            wait_msg = await call.bot.send_message(
+                call.message.chat.id,
+                "⏳ Ro’yxatdan o’tilmoqda..." if ui_lang == "uz" else "⏳ Регистрация...",
+            )
+            res = await register_user(**payload)
+            try:
+                await wait_msg.delete()
+            except Exception:
+                pass
+
+            if isinstance(res, dict) and res.get("ok") is True:
+                info = {
+                    "status": "done",
+                    "updated_at": now_str(),
+                    "user_id": call.from_user.id,
+                    "chat_id": call.message.chat.id,
+                    "ui_lang": ui_lang,
+                    "payload": payload,
+                }
+                REGISTER_JOBS[job_id] = info
+                await persist_job_update(job_id)
+                await complete_register_success(call, state, ui_lang, job_id, info)
+            else:
+                err_txt = res.get("text") if isinstance(res, dict) else str(res)
+                if should_treat_register_as_success(call.from_user.id, err_txt):
+                    info = {
+                        "status": "done",
+                        "updated_at": now_str(),
+                        "user_id": call.from_user.id,
+                        "chat_id": call.message.chat.id,
+                        "ui_lang": ui_lang,
+                        "payload": payload,
+                    }
+                    REGISTER_JOBS[job_id] = info
+                    await persist_job_update(job_id)
+                    await complete_register_success(call, state, ui_lang, job_id, info)
+                else:
+                    err_msg = pretty_register_error(err_txt, ui_lang)
+                    await call.bot.send_message(call.message.chat.id, err_msg)
+            return
+
+        # ---- OFFLINE: queue ----
         REGISTER_JOBS[job_id] = {
             "status": "queued",
             "updated_at": now_str(),
@@ -2263,20 +2307,20 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
             REGISTER_JOBS[job_id]["updated_at"] = now_str()
             await persist_job_update(job_id)
 
-            txt = "❌ Navbat to‘lib ketdi. Keyinroq urinib ko‘ring." if ui_lang == "uz" else "❌ Очередь переполнена. Попробуйте позже."
+            txt = "❌ Navbat to’lib ketdi. Keyinroq urinib ko’ring." if ui_lang == "uz" else "❌ Очередь переполнена. Попробуйте позже."
             await call.bot.send_message(call.message.chat.id, txt)
             return
 
         txt = (
-            "✅ So‘rov navbatga qo‘yildi.\n"
-            "⏳ Tizim band bo‘lsa ham, navbat bilan ishlaydi.\n\n"
+            "✅ So’rov navbatga qo’yildi.\n"
+            "⏳ Tizim band bo’lsa ham, navbat bilan ishlaydi.\n\n"
             f"🧩 Job ID: <code>{job_id}</code>\n"
-            "🔄 Natijani tekshirish uchun 'Tekshirish' ni bosing."
+            "🔄 Natijani tekshirish uchun ‘Tekshirish’ ni bosing."
             if ui_lang == "uz" else
             "✅ Заявка поставлена в очередь.\n"
             "⏳ Даже если сервер занят, обработаем по очереди.\n\n"
             f"🧩 Job ID: <code>{job_id}</code>\n"
-            "🔄 Нажмите 'Проверить' чтобы узнать результат."
+            "🔄 Нажмите ‘Проверить’ чтобы узнать результат."
         )
 
         await call.bot.send_message(
