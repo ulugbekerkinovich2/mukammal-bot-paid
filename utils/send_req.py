@@ -443,14 +443,24 @@ async def submit_dtm_read(image_bytes: bytes, filename: str, book_id: str, conte
     )
     form.add_field("book_id", str(book_id))
 
+    req_headers = _auth_headers()
+    masked_key = (req_headers.get("x-api-key") or "")[:8] + "..."
+    logger.info(
+        f"[DTM_READ] REQUEST url={DTM_READ_URL} book_id={book_id} "
+        f"filename={actual_filename} content_type={actual_content_type} "
+        f"image_size={len(image_bytes)} x-api-key={masked_key}"
+    )
+
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(DTM_READ_URL, data=form, headers=_auth_headers()) as r:
+            async with session.post(DTM_READ_URL, data=form, headers=req_headers) as r:
                 text = await r.text()
                 try:
                     data = await r.json()
                 except Exception:
                     data = None
+
+                logger.info(f"[DTM_READ] RESPONSE status={r.status} body={text[:500]}")
 
                 if r.status >= 400:
                     return {"ok": False, "status": r.status, "text": text, "data": data}
@@ -462,8 +472,10 @@ async def submit_dtm_read(image_bytes: bytes, filename: str, book_id: str, conte
                     "text": text,
                 }
     except asyncio.TimeoutError as e:
+        logger.error(f"[DTM_READ] TIMEOUT {repr(e)}")
         return {"ok": False, "status": 0, "text": f"TimeoutError(): {repr(e)}", "data": None}
     except aiohttp.ClientError as e:
+        logger.error(f"[DTM_READ] CLIENT_ERROR {repr(e)}")
         return {"ok": False, "status": 0, "text": f"ClientError(): {repr(e)}", "data": None}
     except Exception as e:
         return {"ok": False, "status": 0, "text": f"Exception(): {repr(e)}", "data": None}
