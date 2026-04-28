@@ -397,6 +397,31 @@ def pretty_register_error(raw: str, ui_lang: str = "uz") -> str:
     if isinstance(detail, str) and detail in mapping:
         return mapping[detail]["uz"] if ui_lang == "uz" else mapping[detail]["ru"]
 
+    if isinstance(detail, dict):
+        types = detail.get("test_types") or []
+        if isinstance(types, list) and set(types) >= {"offline", "online"}:
+            return (
+                "🚫 Siz offline va online testlarning ikkalasiga ham allaqachon ro‘yxatdan o‘tib bo‘lgansiz.\n"
+                "🔁 /start bosib davom eting."
+                if ui_lang == "uz"
+                else
+                "🚫 Вы уже зарегистрированы и на офлайн, и на онлайн тест.\n"
+                "🔁 Нажмите /start чтобы продолжить."
+            )
+        if isinstance(types, list) and types:
+            done = ", ".join(types)
+            return (
+                f"🚫 Siz {done} test(lar)ga allaqachon ro‘yxatdan o‘tgansiz.\n"
+                f"🔁 /start bosib boshqa testni tanlang."
+                if ui_lang == "uz"
+                else
+                f"🚫 Вы уже зарегистрированы на {done} тест(ы).\n"
+                f"🔁 Нажмите /start и выберите другой тест."
+            )
+        msg = detail.get("message") or detail.get("error") or detail.get("detail")
+        if isinstance(msg, str) and msg:
+            return (f"❌ Ошибка: {msg}" if ui_lang == "ru" else f"❌ Xatolik: {msg}")
+
     detail_str = detail if isinstance(detail, str) else json.dumps(detail, ensure_ascii=False)
     return (f"❌ Ошибка: {detail_str}" if ui_lang == "ru" else f"❌ Xatolik: {detail_str}")
 
