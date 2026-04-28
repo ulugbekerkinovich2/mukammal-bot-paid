@@ -307,7 +307,14 @@ async def submit_dtm_read_request(message: types.Message, state: FSMContext):
         await state.finish()
         return
 
-    await message.answer("⏳ API ga yuboryapman, biroz kuting...")
+    from data.config import SECRET_KEY
+    masked_key = (SECRET_KEY or "")[:8] + "..." if SECRET_KEY else "YO'Q"
+    await message.answer(
+        f"⏳ API ga yuboryapman...\n"
+        f"🔑 Key: <code>{masked_key}</code>\n"
+        f"📎 Fayl: <code>{filename}</code> ({content_type})",
+        parse_mode="HTML"
+    )
 
     telegram_file = await bot.get_file(file_id)
     file_buffer = io.BytesIO()
