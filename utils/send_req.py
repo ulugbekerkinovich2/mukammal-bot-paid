@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Iterable
 import os
 import asyncio
 import random
@@ -12,6 +12,35 @@ from urllib.parse import quote  # (qolaversin, ishlatsang kerak bo‘ladi)
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+
+# =========================
+# TEST TYPE
+# =========================
+VALID_TEST_TYPES = ("offline", "online")
+DEFAULT_TEST_TYPE = "offline"
+
+
+def normalize_test_type(value: Any) -> str:
+    """
+    Backend semantics (see API doc):
+      - NULL / missing / unknown → "offline"
+      - case-insensitive, surrounding whitespace ignored
+    Returns one of VALID_TEST_TYPES.
+    """
+    if value is None:
+        return DEFAULT_TEST_TYPE
+    s = str(value).strip().lower()
+    if s in VALID_TEST_TYPES:
+        return s
+    return DEFAULT_TEST_TYPE
+
+
+def extract_test_type(obj: Any) -> str:
+    """Pull test_type out of a user-shaped dict; defaults to 'offline'."""
+    if isinstance(obj, dict):
+        return normalize_test_type(obj.get("test_type"))
+    return DEFAULT_TEST_TYPE
 
 # =========================
 # CONFIG (ENDPOINTS)
@@ -146,7 +175,7 @@ def _register_payload(
     region: str,
     group_name: str,
     status: bool = True,
-    test_type: str = "offline",
+    test_type: str = DEFAULT_TEST_TYPE,
 ) -> Dict[str, Any]:
     return {
         "bot_id": str(bot_id),
@@ -163,7 +192,7 @@ def _register_payload(
         "region": region or "",
         "group_name": group_name or "",
         "status": status,
-        "test_type": test_type,
+        "test_type": normalize_test_type(test_type),
     }
 
 
@@ -182,7 +211,7 @@ async def register_user(
     group_name: str = "",
     retries: int = REGISTER_RETRIES,
     status: bool = True,
-    test_type: str = "offline",
+    test_type: str = DEFAULT_TEST_TYPE,
     timeout_total: Optional[int] = None,
     timeout_connect: Optional[int] = None,
 ) -> Dict[str, Any]:
@@ -206,7 +235,7 @@ async def register_user(
         region=region,
         group_name=group_name,
         status=status,
-        test_type=test_type,
+        test_type=normalize_test_type(test_type),
     )
 
     timeout_total = int(timeout_total or REGISTER_TIMEOUT_SEC)
@@ -412,6 +441,131 @@ async def fetch_school_by_id(school_id: int):
     return await _request_json("GET", url, headers=_auth_headers(), timeout_total=DEFAULT_TIMEOUT_SEC, timeout_connect=DEFAULT_CONNECT_SEC)
 
 
+# =========================
+# /me, /dtm/users, /dtm/user/{id}, /auth/pending-bot-id-registrations
+# Backend yangi `test_type` filtri va response maydonini qo'llab-quvvatlaydi.
+# =========================
+def _with_test_type_param(
+    params: Optional[Dict[str, Any]],
+    test_type: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    if test_type is None:
+        return params
+    normalized = normalize_test_type(test_type)
+    out = dict(params or {})
+    out["test_type"] = normalized
+    return out
+
+
+async def fetch_me(
+    *,
+    test_type: Optional[str] = None,
+    limit: Optional[int] = None,
+    offset: Optional[int] = None,
+    extra_headers: Optional[Dict[str, str]] = None,
+) -> Dict[str, Any]:
+    """
+    GET /api/v1/me — joriy user / admin ma'lumoti.
+    test_type berilsa, role bo'yicha aggregate'lar shu turdagi userlar bo'yicha qaytadi.
+    """
+    url = _build_url("/api/v1/me")
+    params: Dict[str, Any] = {}
+    if limit is not None:
+        params["limit"] = int(limit)
+    if offset is not None:
+        params["offset"] = int(offset)
+    params = _with_test_type_param(params, test_type) or {}
+    return await _request_json(
+        "GET", url,
+        params=params or None,
+        headers=_auth_headers(extra_headers),
+        timeout_total=DEFAULT_TIMEOUT_SEC,
+        timeout_connect=DEFAULT_CONNECT_SEC,
+    )
+
+
+async def fetch_dtm_users(
+    *,
+    test_type: Optional[str] = None,
+    district: Optional[str] = None,
+    school_code: Optional[str] = None,
+    group_name: Optional[str] = None,
+    has_result: Optional[bool] = None,
+    search: Optional[str] = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> Dict[str, Any]:
+    """GET /api/v1/dtm/users — admin user ro'yxati, test_type bo'yicha filterlash mumkin."""
+    url = _build_url("/api/v1/dtm/users")
+    params: Dict[str, Any] = {"limit": int(limit), "offset": int(offset)}
+    if district:
+        params["district"] = district
+    if school_code:
+        params["school_code"] = school_code
+    if group_name:
+        params["group_name"] = group_name
+    if has_result is not None:
+        params["has_result"] = "true" if has_result else "false"
+    if search:
+        params["search"] = search
+    params = _with_test_type_param(params, test_type) or params
+    return await _request_json(
+        "GET", url,
+        params=params,
+        headers=_auth_headers(),
+        timeout_total=DEFAULT_TIMEOUT_SEC,
+        timeout_connect=DEFAULT_CONNECT_SEC,
+    )
+
+
+async def fetch_dtm_user(user_id: int) -> Dict[str, Any]:
+    """GET /api/v1/dtm/user/{id} — bitta user (admin)."""
+    url = _build_url(f"/api/v1/dtm/user/{int(user_id)}")
+    return await _request_json(
+        "GET", url,
+        headers=_auth_headers(),
+        timeout_total=DEFAULT_TIMEOUT_SEC,
+        timeout_connect=DEFAULT_CONNECT_SEC,
+    )
+
+
+async def fetch_pending_bot_id_registrations(
+    *,
+    test_type: Optional[str] = None,
+) -> Dict[str, Any]:
+    """GET /api/v1/auth/pending-bot-id-registrations — kutilayotgan ro'yxatlar."""
+    url = _build_url("/api/v1/auth/pending-bot-id-registrations")
+    params = _with_test_type_param(None, test_type)
+    return await _request_json(
+        "GET", url,
+        params=params,
+        headers=_auth_headers(),
+        timeout_total=DEFAULT_TIMEOUT_SEC,
+        timeout_connect=DEFAULT_CONNECT_SEC,
+    )
+
+
+def filter_users_by_test_type(
+    users: Iterable[Dict[str, Any]],
+    test_type: Optional[str],
+) -> list:
+    """
+    Klient tomonidan test_type bo'yicha filtrlash (backend qo'llab-quvvatlamasa).
+    'offline' so'rovi NULL ni ham qabul qiladi.
+    """
+    if test_type is None:
+        return list(users)
+    normalized = normalize_test_type(test_type)
+    out = []
+    for u in users:
+        if not isinstance(u, dict):
+            continue
+        ut = extract_test_type(u)
+        if ut == normalized:
+            out.append(u)
+    return out
+
+
 def _detect_image_content_type(image_bytes: bytes, fallback: str = "image/jpeg") -> str:
     if image_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
         return "image/png"
@@ -544,16 +698,22 @@ def check_user_exists(chat_id):
             conn.close()
 
 
-def check_user_exists_by_type(chat_id, test_type: str = "offline"):
+def check_user_exists_by_type(chat_id, test_type: str = DEFAULT_TEST_TYPE):
     """
     User bazada (chat_id, test_type) juftligi bilan borligini tekshiradi.
     True = registratsiya bor, False = registratsiya yo'q (yoki DB xato).
+
+    Eslatma: backend "offline" so'rovi NULL larga ham mos kelishi kerak deb
+    belgilagan (legacy userlar test_type=NULL bilan saqlangan). Shuning uchun
+    'offline' uchun NULL-aware tekshiruv qilamiz.
     """
     import os
     import psycopg2
     db_name = os.getenv("db_name")
     if db_name:
         db_name = db_name.strip('"')
+
+    normalized = normalize_test_type(test_type)
 
     try:
         conn = psycopg2.connect(
@@ -565,10 +725,21 @@ def check_user_exists_by_type(chat_id, test_type: str = "offline"):
         )
         with conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT id FROM users WHERE chat_id = %s AND test_type = %s LIMIT 1",
-                    (str(chat_id), test_type),
-                )
+                if normalized == DEFAULT_TEST_TYPE:
+                    cur.execute(
+                        """
+                        SELECT id FROM users
+                        WHERE chat_id = %s
+                          AND (test_type = %s OR test_type IS NULL)
+                        LIMIT 1
+                        """,
+                        (str(chat_id), normalized),
+                    )
+                else:
+                    cur.execute(
+                        "SELECT id FROM users WHERE chat_id = %s AND test_type = %s LIMIT 1",
+                        (str(chat_id), normalized),
+                    )
                 return cur.fetchone() is not None
     except Exception as e:
         print(f"DATABASE CHECK_USER_BY_TYPE ERROR => {e}")

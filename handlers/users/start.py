@@ -26,6 +26,9 @@ from utils.send_req import (
     get_dtm_result,
     check_user_exists,
     check_user_exists_by_type,
+    normalize_test_type,
+    extract_test_type,
+    DEFAULT_TEST_TYPE,
     REGISTER_RETRY_TIMEOUT_SEC,
     REGISTER_RETRY_CONNECT_SEC,
     REGISTER_RETRY_ATTEMPTS,
@@ -1426,6 +1429,21 @@ def _tg_user_link(user: types.User) -> str:
         return f"@{user.username}"
     return f"<a href='tg://user?id={user.id}'>user</a>"
 
+
+def test_type_badge(test_type: Any) -> str:
+    """Admin guruhi xabarlari uchun test_type badge: 🟢 ONLINE / 🔵 OFFLINE."""
+    tt = normalize_test_type(test_type)
+    if tt == "online":
+        return "🟢 <b>ONLINE</b>"
+    return "🔵 <b>OFFLINE</b>"
+
+
+def _badge_from_payload(data: Any) -> str:
+    if isinstance(data, dict):
+        return test_type_badge(data.get("test_type") or data.get("test_intent"))
+    return test_type_badge(None)
+
+
 async def notify_admins(bot, text: str):
     try:
         await bot.send_message(
@@ -1527,16 +1545,16 @@ async def notify_account_reuse_if_needed(bot, user: types.User, current_job_id: 
     )
 
     alert_text = (
-        f"🚨 <b>ACCOUNT REUSE ALERT</b>\n"
+        f"🚨 <b>ACCOUNT REUSE ALERT</b> · {_badge_from_payload(current_payload)}\n"
         f"🕒 <b>Time:</b> {now_str()}\n"
         f"👤 <b>Telegram user:</b> {_tg_user_link(user)}\n"
         f"🆔 <b>Chat ID:</b> <code>{user.id}</code>\n\n"
-        f"📌 <b>Oldingi muvaffaqiyatli register:</b>\n"
+        f"📌 <b>Oldingi muvaffaqiyatli register:</b> {_badge_from_payload(previous_payload)}\n"
         f"🧩 <b>Job ID:</b> <code>{prev_job_id}</code>\n"
         f"🕒 <b>Vaqt:</b> <code>{prev_time}</code>\n"
         f"{build_register_details(previous_payload)}\n"
         f"📝 <b>Full name:</b> <code>{previous_payload.get('full_name','-')}</code>\n\n"
-        f"📌 <b>Hozirgi register:</b>\n"
+        f"📌 <b>Hozirgi register:</b> {_badge_from_payload(current_payload)}\n"
         f"🧩 <b>Job ID:</b> <code>{current_job_id}</code>\n"
         f"{build_register_details(current_payload)}\n"
         f"📝 <b>Full name:</b> <code>{current_payload.get('full_name','-')}</code>\n\n"
@@ -1770,6 +1788,8 @@ async def _start_registration_with_intent(call: types.CallbackQuery, state: FSMC
     # Eski tracked xabarlarni o'chiramiz, so'ng FSM ni reset qilamiz
     await cleanup_bot_messages(call.bot, call.message.chat.id, state)
     await state.finish()
+
+    intent = normalize_test_type(intent)
 
     try:
         await call.message.delete()
@@ -2236,11 +2256,11 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
             region=data.get("region"),
             group_name=data.get("class_letter"),
             status=True,
-            test_type=data.get("test_intent", "offline"),
+            test_type=normalize_test_type(data.get("test_intent")),
         )
 
         # ---- ONLINE: to’g’ridan API, queue kerak emas ----
-        if data.get("test_intent") == "online":
+        if normalize_test_type(data.get("test_intent")) == "online":
             wait_msg = await call.bot.send_message(
                 call.message.chat.id,
                 "⏳ Ro’yxatdan o’tilmoqda..." if ui_lang == "uz" else "⏳ Регистрация...",
@@ -2332,7 +2352,7 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
         )
 
         await notify_admins(call.bot, (
-            f"🧾 <b>REGISTER QUEUED (BOT)</b>\n"
+            f"🧾 <b>REGISTER QUEUED (BOT)</b> · {test_type_badge(payload.get('test_type'))}\n"
             f"🕒 <b>Time:</b> {now_str()}\n"
             f"👤 <b>User:</b> {_tg_user_link(call.from_user)}\n"
             f"🆔 <b>Chat ID:</b> <code>{call.from_user.id}</code>\n"
@@ -2352,7 +2372,7 @@ async def complete_register_success(
     info: dict,
 ):
     data = await state.get_data()
-    intent = data.get("test_intent")
+    intent = normalize_test_type(data.get("test_intent"))
 
     success_text = tr(ui_lang, "success")
     try:
@@ -2368,7 +2388,7 @@ async def complete_register_success(
         await set_user_intent(call.from_user.id, "offline")
 
     await notify_admins(call.bot, (
-        f"🧾 <b>REGISTER SUCCESS (BOT QUEUE)</b>\n"
+        f"🧾 <b>REGISTER SUCCESS (BOT QUEUE)</b> · {_badge_from_payload(info.get('payload'))}\n"
         f"🕒 <b>Time:</b> {now_str()}\n"
         f"👤 <b>User:</b> {_tg_user_link(call.from_user)}\n"
         f"🆔 <b>Chat ID:</b> <code>{call.from_user.id}</code>\n"
@@ -2444,7 +2464,7 @@ async def reg_job_check(call: types.CallbackQuery, state: FSMContext):
             await call.bot.send_message(call.message.chat.id, user_err)
 
         await notify_admins(call.bot, (
-            f"🧾 <b>REGISTER FAIL (BOT QUEUE)</b>\n"
+            f"🧾 <b>REGISTER FAIL (BOT QUEUE)</b> · {_badge_from_payload(info.get('payload'))}\n"
             f"🕒 <b>Time:</b> {now_str()}\n"
             f"👤 <b>User:</b> {_tg_user_link(call.from_user)}\n"
             f"🆔 <b>Chat ID:</b> <code>{call.from_user.id}</code>\n"
