@@ -1455,7 +1455,33 @@ async def notify_admins(bot, text: str):
     except Exception as e:
         print("ADMIN SEND ERROR =>", repr(e), "ADMIN_CHAT_ID=", ADMIN_CHAT_ID)
 
+_SUBJECT_NAME_BY_ID: Dict[int, str] = {
+    int(info["id"]): name
+    for name, info in SUBJECTS_MAP.items()
+    if isinstance(info, dict) and info.get("id") is not None
+}
+
+
+def _subject_label(subject_id: Any, fallback_name: Any = None) -> str:
+    if fallback_name:
+        name = str(fallback_name).strip()
+        if name:
+            if subject_id in (None, ""):
+                return name
+            return f"{name} (#{subject_id})"
+    try:
+        sid = int(subject_id)
+    except (TypeError, ValueError):
+        return str(subject_id) if subject_id not in (None, "") else "-"
+    name = _SUBJECT_NAME_BY_ID.get(sid)
+    if name:
+        return f"{name} (#{sid})"
+    return str(sid)
+
+
 def build_register_details(data: dict) -> str:
+    first = _subject_label(data.get("first_subject_id"), data.get("first_subject_uz"))
+    second = _subject_label(data.get("second_subject_id"), data.get("second_subject_uz"))
     return (
         f"📞 <b>Phone:</b> <code>{data.get('phone','-')}</code>\n"
         f"🌍 <b>Region:</b> <code>{data.get('region','-')}</code>\n"
@@ -1464,7 +1490,7 @@ def build_register_details(data: dict) -> str:
         f"🏷 <b>Class letter:</b> <code>{data.get('class_letter') or data.get('group_name') or '-'}</code>\n"
         f"🗣 <b>Exam lang:</b> <code>{data.get('exam_lang') or data.get('language') or '-'}</code>\n"
         f"🚻 <b>Gender:</b> <code>{data.get('gender','-')}</code>\n"
-        f"📚 <b>Subjects:</b> <code>{data.get('first_subject_id','-')}</code> + <code>{data.get('second_subject_id','-')}</code>"
+        f"📚 <b>Subjects:</b> <code>{first}</code> + <code>{second}</code>"
     )
 
 
