@@ -698,6 +698,9 @@ def check_user_exists(chat_id):
             conn.close()
 
 
+_TEST_TYPE_COLUMN_MISSING = False
+
+
 def check_user_exists_by_type(chat_id, test_type: str = DEFAULT_TEST_TYPE):
     """
     User bazada (chat_id, test_type) juftligi bilan borligini tekshiradi.
@@ -706,14 +709,30 @@ def check_user_exists_by_type(chat_id, test_type: str = DEFAULT_TEST_TYPE):
     Eslatma: backend "offline" so'rovi NULL larga ham mos kelishi kerak deb
     belgilagan (legacy userlar test_type=NULL bilan saqlangan). Shuning uchun
     'offline' uchun NULL-aware tekshiruv qilamiz.
+
+    Agar local DB'da hali `test_type` ustuni bo'lmasa (eski schema):
+      - 'offline' uchun: shu chat_id bo'yicha har qanday row borligini tekshiramiz
+        (legacy DB faqat offline registratsiyalarni saqlagan).
+      - 'online' uchun: column yo'q — biz aniq bilolmayotgan vaziyat. False
+        qaytaramiz, FSM flow ishlasin (backend duplicate'ni o'zi tekshiradi).
     """
     import os
     import psycopg2
+    from psycopg2 import errors as pg_errors
+
+    global _TEST_TYPE_COLUMN_MISSING
+
     db_name = os.getenv("db_name")
     if db_name:
         db_name = db_name.strip('"')
 
     normalized = normalize_test_type(test_type)
+
+    if _TEST_TYPE_COLUMN_MISSING:
+        # Cached fallback — column doesn't exist in this DB.
+        if normalized == DEFAULT_TEST_TYPE:
+            return check_user_exists(chat_id)
+        return False
 
     try:
         conn = psycopg2.connect(
@@ -741,6 +760,15 @@ def check_user_exists_by_type(chat_id, test_type: str = DEFAULT_TEST_TYPE):
                         (str(chat_id), normalized),
                     )
                 return cur.fetchone() is not None
+    except pg_errors.UndefinedColumn as e:
+        _TEST_TYPE_COLUMN_MISSING = True
+        logger.warning(
+            "users.test_type column missing in local DB; falling back to chat_id-only "
+            "lookup for offline and to FSM flow for online (err=%s)", e,
+        )
+        if normalized == DEFAULT_TEST_TYPE:
+            return check_user_exists(chat_id)
+        return False
     except Exception as e:
         print(f"DATABASE CHECK_USER_BY_TYPE ERROR => {e}")
         return False
