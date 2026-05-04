@@ -315,8 +315,8 @@ TEXTS = {
         "ru": "📄 <b>Offline тест режим</b>\n\nИспользуйте кнопки ниже. Кнопки для просмотра результата и получения сертификата находятся внизу.",
     },
     "online_ready": {
-        "uz": "🌐 <b>Online test</b>\n\nRo'yxatdan muvaffaqiyatli o'tdingiz. Quyidagi tugmani bosing va testni boshlang.\n\n⏱ 90 savol, 3 soat.",
-        "ru": "🌐 <b>Online тест</b>\n\nВы успешно зарегистрированы. Нажмите кнопку ниже и начните тест.\n\n⏱ 90 вопросов, 3 часа.",
+        "uz": "🌐 <b>Online test</b>\n\nRo'yxatdan muvaffaqiyatli o'tdingiz. Quyidagi tugmani bosing va testni boshlang.",
+        "ru": "🌐 <b>Online тест</b>\n\nВы успешно зарегистрированы. Нажмите кнопку ниже и начните тест.",
     },
     "btn_start_online_test": {"uz": "🌐 Testni boshlash", "ru": "🌐 Начать тест"},
     "welcome_back_offline": {
@@ -1724,18 +1724,10 @@ async def _show_online_greeting(target_message: types.Message, user_id: int, ui_
 
 
 async def _show_online_ready(target_message: types.Message, user_id: int, ui_lang: str = "uz"):
-    from data.config import ADMINS
-    from keyboards.default.userKeyboard import adminKeyboard_user
-    reply_markup = adminKeyboard_user if str(user_id) in ADMINS else keyboard_user
     await target_message.bot.send_message(
         target_message.chat.id,
         tr(ui_lang, "online_ready"),
         parse_mode="HTML",
-        reply_markup=reply_markup,
-    )
-    await target_message.bot.send_message(
-        target_message.chat.id,
-        tr(ui_lang, "btn_start_online_test"),
         reply_markup=online_ready_kb(ui_lang),
     )
 
