@@ -1643,10 +1643,11 @@ async def show_test_type_menu(target, ui_lang: str = "uz"):
 def pre_register_test_type_kb() -> types.InlineKeyboardMarkup:
     kb = types.InlineKeyboardMarkup(row_width=1)
     kb.add(
-        types.InlineKeyboardButton(
-            text=f"{TEXTS['btn_offline_test']['uz']} / {TEXTS['btn_offline_test']['ru']}",
-            callback_data="pre_choose_offline",
-        ),
+        # Offline (bot orqali) tugmasi vaqtincha yashirildi.
+        # types.InlineKeyboardButton(
+        #     text=f"{TEXTS['btn_offline_test']['uz']} / {TEXTS['btn_offline_test']['ru']}",
+        #     callback_data="pre_choose_offline",
+        # ),
         types.InlineKeyboardButton(
             text=f"{TEXTS['btn_online_test']['uz']} / {TEXTS['btn_online_test']['ru']}",
             callback_data="pre_choose_online",
