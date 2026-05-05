@@ -2313,6 +2313,13 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
         job_id = uuid.uuid4().hex
         USER_LAST_JOB[call.from_user.id] = job_id
 
+        # Offline registratsiya o'chirilgan — eski FSM state'da test_intent=offline
+        # qolgan userlar bo'lishi mumkin (offline tugma yashirilishidan oldin
+        # registratsiyani boshlagan). Ularni majburan online'ga o'tkazamiz.
+        if normalize_test_type(data.get("test_intent")) != "online":
+            await state.update_data(test_intent="online")
+            data = await state.get_data()
+
         payload = dict(
             bot_id=str(call.from_user.id),
             full_name=data.get("fio"),
@@ -2327,7 +2334,7 @@ async def reg_verify(call: types.CallbackQuery, state: FSMContext):
             region=data.get("region"),
             group_name=data.get("class_letter"),
             status=True,
-            test_type=normalize_test_type(data.get("test_intent")),
+            test_type="online",
         )
 
         # ---- ONLINE: to’g’ridan API, queue kerak emas ----
