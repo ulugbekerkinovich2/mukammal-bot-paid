@@ -651,6 +651,7 @@ async def persist_job_update(job_id: str) -> None:
 
 async def requeue_pending_jobs() -> int:
     n = 0
+    skipped_offline = 0
     for job_id, info in list(REGISTER_JOBS.items()):
         if not isinstance(info, dict):
             continue
@@ -662,6 +663,17 @@ async def requeue_pending_jobs() -> int:
             info["error"] = "payload_missing"
             info["updated_at"] = now_str()
             await persist_job_update(job_id)
+            continue
+
+        # Offline registratsiya o'chirilgan — eski queue'da qolgan offline
+        # job'larni qayta yubormaymiz, "cancelled" deb belgilaymiz.
+        if normalize_test_type(payload.get("test_type")) == "offline":
+            info["status"] = "cancelled"
+            info["error"] = "offline_disabled"
+            info["updated_at"] = now_str()
+            info["note"] = "offline_path_disabled_at_restart"
+            await persist_job_update(job_id)
+            skipped_offline += 1
             continue
 
         try:
@@ -678,6 +690,11 @@ async def requeue_pending_jobs() -> int:
 
     if n:
         logger.info(f"[JOBS] requeued {n} jobs from JSON")
+    if skipped_offline:
+        logger.warning(
+            f"[JOBS] skipped {skipped_offline} offline job(s) at restart "
+            f"(offline path disabled)"
+        )
     return n
 
 
@@ -741,6 +758,18 @@ async def requeue_failed_status_false_jobs(limit: int = 25) -> List[Dict[str, An
 
         payload = info.get("payload")
         if not isinstance(payload, dict):
+            continue
+
+        # Offline registratsiya o'chirilgan — failed offline job'lar
+        # qayta urinilmaydi.
+        if normalize_test_type(payload.get("test_type")) == "offline":
+            info.update({
+                "status": "cancelled",
+                "error": "offline_disabled",
+                "updated_at": now_str(),
+                "note": "offline_path_disabled_skipped_retry",
+            })
+            await persist_job_update(job_id)
             continue
 
         retry_payload = dict(payload)
@@ -816,6 +845,26 @@ async def _register_worker(worker_idx: int, bot):
     while True:
         job: RegisterJob = await REGISTER_QUEUE.get()
         try:
+            # Defensiv tekshiruv: offline job worker'ga yetib kelsa, ishlamaymiz.
+            if normalize_test_type((job.payload or {}).get("test_type")) == "offline":
+                REGISTER_JOBS[job.job_id] = REGISTER_JOBS.get(job.job_id, {}) or {}
+                REGISTER_JOBS[job.job_id].update({
+                    "status": "cancelled",
+                    "error": "offline_disabled",
+                    "updated_at": now_str(),
+                    "note": "offline_path_disabled_in_worker",
+                    "user_id": job.user_id,
+                    "chat_id": job.chat_id,
+                    "ui_lang": job.ui_lang,
+                    "payload": job.payload,
+                })
+                await persist_job_update(job.job_id)
+                logger.warning(
+                    f"[QUEUE] worker#{worker_idx} dropped offline job_id={job.job_id} "
+                    f"user_id={job.user_id} (offline disabled)"
+                )
+                continue
+
             # processing
             REGISTER_JOBS[job.job_id] = REGISTER_JOBS.get(job.job_id, {}) or {}
             REGISTER_JOBS[job.job_id].update({
