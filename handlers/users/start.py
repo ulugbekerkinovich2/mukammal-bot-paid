@@ -1767,22 +1767,16 @@ async def start_cmd(message: types.Message, state: FSMContext):
     # callback (pre_choose_*) kerakli ish-harakatni qiladi (greet vs register).
     await show_pre_register_test_type(message, state)
 
+_OFFLINE_DISABLED_NOTICE = "Offline test vaqtincha o'chirilgan. Iltimos, online testdan foydalaning."
+
+
 @dp.callback_query_handler(lambda c: c.data == "test_type_offline", state="*")
 async def test_type_offline_cb(call: types.CallbackQuery, state: FSMContext):
-    await call.answer()
-    data = await state.get_data()
-    ui_lang = data.get("ui_lang", "uz")
-
-    from data.config import ADMINS
-    from keyboards.default.userKeyboard import adminKeyboard_user
-
-    reply_markup = adminKeyboard_user if str(call.from_user.id) in ADMINS else keyboard_user
-    await call.bot.send_message(
-        call.message.chat.id,
-        tr(ui_lang, "offline_menu_text"),
-        parse_mode="HTML",
-        reply_markup=reply_markup,
-    )
+    try:
+        await call.answer(_OFFLINE_DISABLED_NOTICE, show_alert=True)
+    except Exception:
+        pass
+    await show_pre_register_test_type(call.message, state)
 
 
 @dp.callback_query_handler(lambda c: c.data == "reregister", state="*")
@@ -1803,7 +1797,10 @@ async def reregister_cb(call: types.CallbackQuery, state: FSMContext):
 
 
 async def _start_registration_with_intent(call: types.CallbackQuery, state: FSMContext, intent: str):
-    await call.answer()
+    try:
+        await call.answer()
+    except Exception:
+        pass
     # Eski tracked xabarlarni o'chiramiz, so'ng FSM ni reset qilamiz
     await cleanup_bot_messages(call.bot, call.message.chat.id, state)
     await state.finish()
@@ -1843,7 +1840,13 @@ async def _start_registration_with_intent(call: types.CallbackQuery, state: FSMC
 
 @dp.callback_query_handler(lambda c: c.data == "pre_choose_offline", state="*")
 async def pre_choose_offline_cb(call: types.CallbackQuery, state: FSMContext):
-    await _start_registration_with_intent(call, state, "offline")
+    # Offline flow o'chirilgan — eski cached tugmalarni bossa, online'ga
+    # yo'naltiramiz va alert bilan xabar qilamiz.
+    try:
+        await call.answer(_OFFLINE_DISABLED_NOTICE, show_alert=True)
+    except Exception:
+        pass
+    await _start_registration_with_intent(call, state, "online")
 
 
 @dp.callback_query_handler(lambda c: c.data == "pre_choose_online", state="*")
