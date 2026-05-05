@@ -1754,14 +1754,14 @@ async def start_cmd(message: types.Message, state: FSMContext):
     # Queue workerlarni ishga tushiramiz (1 marta)
     await ensure_register_workers(message.bot, workers=2)
 
-    # 1. Obunani tekshiramiz (vaqtincha o'chirilgan)
-    # is_sub = await is_subscribed(message.from_user.id, message.bot)
-    # if not is_sub:
-    #     await message.answer(
-    #         "Botdan foydalanish uchun rasmiy kanalimizga a'zo bo'ling! ✅",
-    #         reply_markup=sub_kb()
-    #     )
-    #     return
+    # 1. Majburiy obunani tekshiramiz
+    is_sub = await is_subscribed(message.from_user.id, message.bot)
+    if not is_sub:
+        await message.answer(
+            "Botdan foydalanish uchun rasmiy kanalimizga a'zo bo'ling! ✅",
+            reply_markup=sub_kb()
+        )
+        return
 
     # 2. Har doim chooser ko'rsatamiz — bir userda ikkala flow ham bo'lishi mumkin,
     # callback (pre_choose_*) kerakli ish-harakatni qiladi (greet vs register).
