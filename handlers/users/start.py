@@ -1306,7 +1306,8 @@ async def ensure_failed_register_retry_sweeper(bot):
 
 async def startup_register_services(bot, workers: int = 2):
     await ensure_register_workers(bot, workers=workers)
-    await ensure_register_queue_stats_notifier(bot)
+    # Queue stats periodic broadcast'i guruhga kerak emas — o'chirilgan.
+    # await ensure_register_queue_stats_notifier(bot)
     await ensure_failed_register_retry_sweeper(bot)
 
 # ----------------------------
