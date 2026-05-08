@@ -1542,6 +1542,7 @@ def schools_kb(
     *,
     show_search: bool = True,
     show_back_to_full: bool = False,
+    back_to: str = "district",
 ):
     kb = InlineKeyboardMarkup(row_width=2)
     for s in schools[:60]:
@@ -1555,7 +1556,7 @@ def schools_kb(
     if show_back_to_full:
         kb.row(InlineKeyboardButton(tr(ui_lang, "btn_school_show_all"), callback_data="reg_school_show_all"))
     kb.row(
-        InlineKeyboardButton(tr(ui_lang, "btn_back"), callback_data="reg_back:school_type"),
+        InlineKeyboardButton(tr(ui_lang, "btn_back"), callback_data=f"reg_back:{back_to}"),
         InlineKeyboardButton(tr(ui_lang, "btn_cancel"), callback_data="reg_cancel"),
     )
     return kb
@@ -2275,12 +2276,33 @@ async def reg_pick_district(call: types.CallbackQuery, state: FSMContext):
     district = call.data.split(":", 1)[1]
     await state.update_data(district=district)
 
-    await edit_clean(
-        call, state,
-        tr(ui_lang, "school_type_ask"),
-        reply_markup=school_type_kb(ui_lang),
-    )
-    await Registration.school_type.set()
+    # Eski xulq: tuman tanlangach darhol shu tumandagi BARCHA maktablar
+    # ro'yxatini ko'rsatamiz (litsey/texnikum bilan birga). school_type
+    # chooser hozircha bypass qilingan — backend bu endpointda type maydonini
+    # qaytarmagani sababli filter natijada bo'sh ro'yxat berib qo'yardi.
+    region = data.get("region")
+    res = await fetch_schools(region=region, district=district)
+    if not (isinstance(res, dict) and res.get("ok")):
+        await edit_clean(call, state, pretty_register_error(str(res), ui_lang), reply_markup=None)
+        return
+
+    schools = res.get("schools") or []
+    if not schools:
+        await edit_clean(call, state, tr(ui_lang, "schools_not_found"), reply_markup=None)
+        return
+
+    school_map = {}
+    schools_full = []
+    for s in schools:
+        code = str(s.get("code") or "")
+        name = str(s.get("name") or code)
+        if code:
+            school_map[code] = name
+            schools_full.append({"code": code, "name": name})
+    await state.update_data(school_map=school_map, schools_full=schools_full, school_type=None)
+
+    await edit_clean(call, state, tr(ui_lang, "school_pick_ask"), reply_markup=schools_kb(ui_lang, schools))
+    await Registration.school.set()
 
 
 @dp.callback_query_handler(lambda c: c.data.startswith("reg_school_type:"), state=Registration.school_type)
