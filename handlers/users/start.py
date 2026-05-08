@@ -1989,9 +1989,30 @@ async def start_cmd(message: types.Message, state: FSMContext):
         )
         return
 
-    # 2. Har doim chooser ko'rsatamiz — bir userda ikkala flow ham bo'lishi mumkin,
-    # callback (pre_choose_*) kerakli ish-harakatni qiladi (greet vs register).
-    await show_pre_register_test_type(message, state)
+    # 2. Offline o'chirilgan — chooser ko'rsatishning hojati yo'q. Darhol
+    # online flow'ga o'tkazamiz: ro'yxatdan o'tgan bo'lsa, greeting; yo'q
+    # bo'lsa, registratsiya FSM.
+    await _start_online_flow_from_message(message, state)
+
+
+async def _start_online_flow_from_message(message: types.Message, state: FSMContext):
+    intent = "online"
+    user_id = message.from_user.id
+
+    if check_user_exists_by_type(user_id, intent):
+        await set_user_intent(user_id, intent)
+        await _show_online_greeting(message, user_id, ui_lang="uz")
+        return
+
+    await state.update_data(test_intent=intent)
+    res = await get_dtm_result(user_id)
+    show_btn = bool(extract_dtm_result_data(res))
+    await send_clean(
+        message, state,
+        f"{TEXTS['choose_ui_lang']['uz']} / {TEXTS['choose_ui_lang']['ru']}",
+        reply_markup=ui_lang_kb(show_result_btn=bool(show_btn)),
+    )
+    await Registration.ui_lang.set()
 
 _OFFLINE_DISABLED_NOTICE = "Offline test vaqtincha o'chirilgan. Iltimos, online testdan foydalaning."
 
@@ -2089,32 +2110,12 @@ async def check_sub(call: types.CallbackQuery, state: FSMContext):
 
     await call.answer("✅ Obuna tasdiqlandi")
 
-    # 1. Ro'yxatdan o'tganmi?
-    if check_user_exists(call.from_user.id):
-        data = await state.get_data()
-        ui_lang = data.get("ui_lang", "uz")
-        try:
-            await call.message.delete()
-        except Exception:
-            pass
-        intent = get_user_intent(call.from_user.id) or "offline"
-        if intent == "online":
-            await _show_online_greeting(call.message, call.from_user.id, ui_lang)
-        else:
-            await _show_offline_greeting(call.message, call.from_user.id, ui_lang)
-        await state.finish()
-        return
-
-    # 2. Tilni tanlash
-    res = await get_dtm_result(call.from_user.id)
-    show_btn = bool(extract_dtm_result_data(res))
-
-    await edit_clean(
-        call, state,
-        f"{TEXTS['choose_ui_lang']['uz']} / {TEXTS['choose_ui_lang']['ru']}",
-        reply_markup=ui_lang_kb(show_result_btn=bool(show_btn))
-    )
-    await Registration.ui_lang.set()
+    # Offline o'chirilgan: obunadan keyin darhol online flow'ga o'tkazamiz.
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
+    await _start_online_flow_from_message(call.message, state)
 
 
 @dp.callback_query_handler(lambda c: c.data == "show_my_result_callback", state="*")
