@@ -1420,18 +1420,35 @@ def sub_kb():
     kb.add(InlineKeyboardButton("🔄 Tekshirish", callback_data="check_sub"))
     return kb
 
+def _dedupe_keep_order(items: List[str]) -> List[str]:
+    """Bo'shliqlarni trim qilib, case-insensitive duplicate'larni tashlaydi.
+    Original tartib saqlanadi, birinchi uchragan variant qoladi."""
+    seen: Set[str] = set()
+    out: List[str] = []
+    for raw in items or []:
+        s = str(raw or "").strip()
+        if not s:
+            continue
+        key = s.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(s)
+    return out
+
+
 def regions_kb(ui_lang: str, regions: List[str]):
     kb = InlineKeyboardMarkup(row_width=2)
-    for r in regions[:60]:
-        rr = str(r)[:50]
+    for r in _dedupe_keep_order(regions)[:60]:
+        rr = r[:50]
         kb.insert(InlineKeyboardButton(rr, callback_data=f"reg_region:{rr}"))
     kb.add(InlineKeyboardButton(tr(ui_lang, "btn_cancel"), callback_data="reg_cancel"))
     return kb
 
 def districts_kb(ui_lang: str, districts: List[str]):
     kb = InlineKeyboardMarkup(row_width=1)
-    for d in districts[:80]:
-        dd = str(d)[:50]
+    for d in _dedupe_keep_order(districts)[:80]:
+        dd = d[:50]
         kb.add(InlineKeyboardButton(dd, callback_data=f"reg_district:{dd}"))
     kb.row(
         InlineKeyboardButton(tr(ui_lang, "btn_back"), callback_data="reg_back:region"),
