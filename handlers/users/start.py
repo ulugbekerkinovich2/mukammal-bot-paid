@@ -623,13 +623,38 @@ def _extract_schools_list(payload: Any) -> Optional[List[Dict[str, Any]]]:
     return None
 
 
+def _region_variants(region: str) -> Set[str]:
+    """
+    Bot va /dtm/schools backend'da region nomi farqli yozilgan bo'lishi mumkin
+    (masalan: "Toshkent shahar" vs "Toshkent shahri"). Bir xil region uchun
+    qaytarilishi mumkin variantlar.
+    """
+    if not region:
+        return set()
+    base = region.strip()
+    out: Set[str] = {base}
+    # shahar ↔ shahri (eng tipik mismatch)
+    if "shahar" in base:
+        out.add(base.replace("shahar", "shahri"))
+    if "shahri" in base:
+        out.add(base.replace("shahri", "shahar"))
+    # case-insensitive comparison uchun ham qo'shamiz
+    out |= {v.casefold() for v in list(out)}
+    return out
+
+
 async def _fetch_schools_dtm(region: str, district: str, school_type: Optional[str] = None) -> Dict[str, Any]:
     """
     Yangi /api/v1/dtm/schools endpoint — har turdagi maktablar (school + litsey
     + texnikum) bilan to'liq ro'yxat qaytaradi. X-API-Key talab qiladi.
+
+    Region nomi backend'lar orasida farq qilishi mumkin ("Toshkent shahar" vs
+    "Toshkent shahri"), shuning uchun query'da region bermaymiz; faqat
+    district bilan so'raymiz, javobni esa region variantlari bo'yicha klient
+    tomonida filterlaymiz.
     """
     url = f"{API_V1}/dtm/schools"
-    params: Dict[str, Any] = {"region": region, "district": district, "limit": 500}
+    params: Dict[str, Any] = {"district": district, "limit": 500}
     if school_type:
         params["type"] = normalize_school_type(school_type)
     headers = {"accept": "application/json"}
@@ -653,6 +678,20 @@ async def _fetch_schools_dtm(region: str, district: str, school_type: Optional[s
                 lst = _extract_schools_list(data)
                 if lst is None:
                     return {"ok": False, "status": 500, "text": f"unexpected payload: {str(data)[:200]}"}
+
+                # Region variantlari bo'yicha filter (district allaqachon
+                # backend tomonidan qo'llangan).
+                if region:
+                    wanted = _region_variants(region)
+                    lst = [
+                        s for s in lst
+                        if isinstance(s, dict)
+                        and (
+                            str(s.get("region") or "").strip() in wanted
+                            or str(s.get("region") or "").strip().casefold() in wanted
+                        )
+                    ]
+
                 return {"ok": True, "schools": lst}
     except asyncio.TimeoutError:
         logger.error("[fetch_schools_dtm] TIMEOUT")
