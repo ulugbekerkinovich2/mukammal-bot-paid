@@ -623,24 +623,52 @@ def _extract_schools_list(payload: Any) -> Optional[List[Dict[str, Any]]]:
     return None
 
 
+_APOSTROPHES = ("ʻ", "ʼ", "‘", "’", "`", "'")
+
+
+def _norm_locale(s: Any) -> str:
+    """
+    Region/district nomlarini taqqoslash uchun normalize qiladi:
+      - lower-case
+      - apostrof variantlari bittaga (`'`)
+      - chiziqcha → bo'shliq
+      - ortiqcha bo'shliqlar olib tashlanadi
+    """
+    text = str(s or "").strip().casefold()
+    for ch in _APOSTROPHES:
+        text = text.replace(ch, "'")
+    text = text.replace("-", " ")
+    text = re.sub(r"\s+", " ", text)
+    # apostrof o'zi ham noaniq mismatch keltirib chiqarishi mumkin (Mirzo Ulug'bek
+    # vs Mirzo Ulugbek), shuning uchun normalize'da ularni ham ochiramiz.
+    text = text.replace("'", "")
+    return text
+
+
 def _region_variants(region: str) -> Set[str]:
     """
     Bot va /dtm/schools backend'da region nomi farqli yozilgan bo'lishi mumkin
-    (masalan: "Toshkent shahar" vs "Toshkent shahri"). Bir xil region uchun
-    qaytarilishi mumkin variantlar.
+    (masalan: "Toshkent shahar" vs "Toshkent shahri"). Variantlarni qaytaradi.
+    Solishtirish _norm_locale orqali ham bajariladi.
     """
     if not region:
         return set()
     base = region.strip()
-    out: Set[str] = {base}
-    # shahar ↔ shahri (eng tipik mismatch)
-    if "shahar" in base:
-        out.add(base.replace("shahar", "shahri"))
-    if "shahri" in base:
-        out.add(base.replace("shahri", "shahar"))
-    # case-insensitive comparison uchun ham qo'shamiz
-    out |= {v.casefold() for v in list(out)}
+    out: Set[str] = {base, _norm_locale(base)}
+    if "shahar" in base.casefold():
+        alt = re.sub(r"shahar", "shahri", base, flags=re.IGNORECASE)
+        out |= {alt, _norm_locale(alt)}
+    if "shahri" in base.casefold():
+        alt = re.sub(r"shahri", "shahar", base, flags=re.IGNORECASE)
+        out |= {alt, _norm_locale(alt)}
     return out
+
+
+def _district_matches(query_district: str, item_district: str) -> bool:
+    """Normalized comparison — apostrof/chiziqcha/case farqlariga toqat qiladi."""
+    if not query_district or not item_district:
+        return False
+    return _norm_locale(query_district) == _norm_locale(item_district)
 
 
 async def _fetch_schools_dtm(region: str, district: str, school_type: Optional[str] = None) -> Dict[str, Any]:
@@ -648,15 +676,28 @@ async def _fetch_schools_dtm(region: str, district: str, school_type: Optional[s
     Yangi /api/v1/dtm/schools endpoint — har turdagi maktablar (school + litsey
     + texnikum) bilan to'liq ro'yxat qaytaradi. X-API-Key talab qiladi.
 
-    Region nomi backend'lar orasida farq qilishi mumkin ("Toshkent shahar" vs
-    "Toshkent shahri"), shuning uchun query'da region bermaymiz; faqat
-    district bilan so'raymiz, javobni esa region variantlari bo'yicha klient
-    tomonida filterlaymiz.
+    Region va district nomi backend'lar orasida farqli yozilgan bo'lishi
+    mumkin (apostrof variantlari, "shahar" vs "shahri", chiziqcha va h.k.).
+    Shuning uchun query string'da minimal filter qo'yamiz va javobni klient
+    tomonida normalize qilingan variantlar bilan moslaymiz:
+
+      - school yoki filtersiz so'rov → district bilan (kichik payload)
+      - litsey / texnikum (kichik to'plam ~ 100 item butun bazada) →
+        district'siz so'raymiz, javobni district + region variantlari
+        bilan client-side filterlaymiz.
     """
     url = f"{API_V1}/dtm/schools"
-    params: Dict[str, Any] = {"district": district, "limit": 500}
-    if school_type:
-        params["type"] = normalize_school_type(school_type)
+    params: Dict[str, Any] = {"limit": 500}
+    normalized_type = normalize_school_type(school_type) if school_type else None
+    if normalized_type:
+        params["type"] = normalized_type
+
+    # litsey/texnikum — kichik to'plam, district query string'iga qo'shmaymiz,
+    # apostrof/chiziqcha mismatch'idan qutulamiz.
+    send_district_in_query = normalized_type not in ("litsey", "texnikum")
+    if send_district_in_query and district:
+        params["district"] = district
+
     headers = {"accept": "application/json"}
     api_key = (SECRET_KEY or "").strip()
     if api_key:
@@ -679,19 +720,29 @@ async def _fetch_schools_dtm(region: str, district: str, school_type: Optional[s
                 if lst is None:
                     return {"ok": False, "status": 500, "text": f"unexpected payload: {str(data)[:200]}"}
 
-                # Region variantlari bo'yicha filter (district allaqachon
-                # backend tomonidan qo'llangan).
+                before = len(lst)
+
+                # Region — variantlar bilan moslash (shahar↔shahri va h.k.)
                 if region:
-                    wanted = _region_variants(region)
+                    region_norms = {_norm_locale(v) for v in _region_variants(region)}
                     lst = [
                         s for s in lst
-                        if isinstance(s, dict)
-                        and (
-                            str(s.get("region") or "").strip() in wanted
-                            or str(s.get("region") or "").strip().casefold() in wanted
-                        )
+                        if isinstance(s, dict) and _norm_locale(s.get("region")) in region_norms
                     ]
 
+                # District — apostrof/chiziqcha variantlariga toqat qiluvchi
+                # normalize bilan moslash (faqat district query'da yuborilmagan
+                # holda kerak, lekin yuborilgan bo'lsa ham xato emas).
+                if district:
+                    lst = [
+                        s for s in lst
+                        if isinstance(s, dict) and _district_matches(district, s.get("district"))
+                    ]
+
+                logger.info(
+                    f"[fetch_schools_dtm] type={normalized_type} region={region!r} "
+                    f"district={district!r} api_returned={before} after_filter={len(lst)}"
+                )
                 return {"ok": True, "schools": lst}
     except asyncio.TimeoutError:
         logger.error("[fetch_schools_dtm] TIMEOUT")
