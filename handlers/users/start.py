@@ -2370,33 +2370,15 @@ async def reg_pick_district(call: types.CallbackQuery, state: FSMContext):
     district = call.data.split(":", 1)[1]
     await state.update_data(district=district)
 
-    # Eski xulq: tuman tanlangach darhol shu tumandagi BARCHA maktablar
-    # ro'yxatini ko'rsatamiz (litsey/texnikum bilan birga). school_type
-    # chooser hozircha bypass qilingan — backend bu endpointda type maydonini
-    # qaytarmagani sababli filter natijada bo'sh ro'yxat berib qo'yardi.
-    region = data.get("region")
-    res = await fetch_schools(region=region, district=district)
-    if not (isinstance(res, dict) and res.get("ok")):
-        await edit_clean(call, state, pretty_register_error(str(res), ui_lang), reply_markup=None)
-        return
-
-    schools = res.get("schools") or []
-    if not schools:
-        await edit_clean(call, state, tr(ui_lang, "schools_not_found"), reply_markup=None)
-        return
-
-    school_map = {}
-    schools_full = []
-    for s in schools:
-        code = str(s.get("code") or "")
-        name = str(s.get("name") or code)
-        if code:
-            school_map[code] = name
-            schools_full.append({"code": code, "name": name})
-    await state.update_data(school_map=school_map, schools_full=schools_full, school_type=None)
-
-    await edit_clean(call, state, tr(ui_lang, "school_pick_ask"), reply_markup=schools_kb(ui_lang, schools))
-    await Registration.school.set()
+    # Tuman tanlangach — ta'lim turi tanlash chooser'i ochiladi
+    # (Maktab / Litsey / Texnikum). Yangi /dtm/schools endpointi har turdagi
+    # maktablarni qaytaradi, shuning uchun filter to'g'ri ishlaydi.
+    await edit_clean(
+        call, state,
+        tr(ui_lang, "school_type_ask"),
+        reply_markup=school_type_kb(ui_lang),
+    )
+    await Registration.school_type.set()
 
 
 @dp.callback_query_handler(lambda c: c.data.startswith("reg_school_type:"), state=Registration.school_type)
@@ -2417,7 +2399,7 @@ async def reg_pick_school_type(call: types.CallbackQuery, state: FSMContext):
 
     schools = res.get("schools") or []
     if not schools:
-        # Bu turdagi maktab topilmadi — orqaga chiqarib boshqa tur tanlatamiz.
+        # Bu turdagi maktab topilmadi — boshqa tur tanlatamiz.
         await edit_clean(
             call, state,
             tr(ui_lang, "schools_not_found"),
@@ -2435,7 +2417,11 @@ async def reg_pick_school_type(call: types.CallbackQuery, state: FSMContext):
             schools_full.append({"code": code, "name": name})
     await state.update_data(school_map=school_map, schools_full=schools_full)
 
-    await edit_clean(call, state, tr(ui_lang, "school_pick_ask"), reply_markup=schools_kb(ui_lang, schools))
+    await edit_clean(
+        call, state,
+        tr(ui_lang, "school_pick_ask"),
+        reply_markup=schools_kb(ui_lang, schools, back_to="school_type"),
+    )
     await Registration.school.set()
 
 
