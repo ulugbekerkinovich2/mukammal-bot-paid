@@ -1616,13 +1616,15 @@ def school_type_label(school_type: str, ui_lang: str = "uz") -> str:
     return entry.get(ui_lang) or entry.get("uz") or "Maktab"
 
 
-def school_type_kb(ui_lang: str) -> InlineKeyboardMarkup:
+def school_type_kb(ui_lang: str, *, show_all_fallback: bool = False) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(row_width=1)
     kb.add(
         InlineKeyboardButton(tr(ui_lang, "school_type_school"),   callback_data="reg_school_type:school"),
         InlineKeyboardButton(tr(ui_lang, "school_type_litsey"),   callback_data="reg_school_type:litsey"),
         InlineKeyboardButton(tr(ui_lang, "school_type_texnikum"), callback_data="reg_school_type:texnikum"),
     )
+    if show_all_fallback:
+        kb.add(InlineKeyboardButton(tr(ui_lang, "btn_school_show_all"), callback_data="reg_school_type:any"))
     kb.row(
         InlineKeyboardButton(tr(ui_lang, "btn_back"), callback_data="reg_back:district"),
         InlineKeyboardButton(tr(ui_lang, "btn_cancel"), callback_data="reg_cancel"),
@@ -2370,13 +2372,13 @@ async def reg_pick_district(call: types.CallbackQuery, state: FSMContext):
     district = call.data.split(":", 1)[1]
     await state.update_data(district=district)
 
-    # Tuman tanlangach — ta'lim turi tanlash chooser'i ochiladi
-    # (Maktab / Litsey / Texnikum). Yangi /dtm/schools endpointi har turdagi
-    # maktablarni qaytaradi, shuning uchun filter to'g'ri ishlaydi.
+    # Tuman tanlangach — ta'lim turi tanlash chooser'i ochiladi.
+    # "📋 Barchasini ko'rsatish" tugmasi ham bor — backend'da litsey/texnikum
+    # data hali yuklanmagan bo'lsa ham foydalanuvchi maktabini topa oladi.
     await edit_clean(
         call, state,
         tr(ui_lang, "school_type_ask"),
-        reply_markup=school_type_kb(ui_lang),
+        reply_markup=school_type_kb(ui_lang, show_all_fallback=True),
     )
     await Registration.school_type.set()
 
@@ -2387,7 +2389,8 @@ async def reg_pick_school_type(call: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
     ui_lang = data.get("ui_lang", "uz")
 
-    school_type = normalize_school_type(call.data.split(":", 1)[1])
+    raw = call.data.split(":", 1)[1].strip().lower()
+    school_type = None if raw == "any" else normalize_school_type(raw)
     await state.update_data(school_type=school_type)
 
     region = data.get("region")
@@ -2399,11 +2402,12 @@ async def reg_pick_school_type(call: types.CallbackQuery, state: FSMContext):
 
     schools = res.get("schools") or []
     if not schools:
-        # Bu turdagi maktab topilmadi — boshqa tur tanlatamiz.
+        # Bu turdagi maktab topilmadi — chooser'ni "Barchasini ko'rsatish"
+        # tugmasi bilan qaytaramiz, foydalanuvchi qutulishi mumkin.
         await edit_clean(
             call, state,
             tr(ui_lang, "schools_not_found"),
-            reply_markup=school_type_kb(ui_lang),
+            reply_markup=school_type_kb(ui_lang, show_all_fallback=True),
         )
         return
 
