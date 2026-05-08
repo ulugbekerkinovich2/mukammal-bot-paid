@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import Iterable
 
@@ -6,36 +7,39 @@ from aiogram.dispatcher.middlewares import BaseMiddleware
 
 logger = logging.getLogger(__name__)
 
-# Callback data prefixlari — bu prefiksdagi callbacklar bossanga ham
-# inline klaviaturani saqlab qolish kerak (handler o'zi edit qiladi).
-# Hozircha kerak bo'lmasa bo'sh, kerak bo'lsa shu yerga qo'shing.
-_KEEP_KB_PREFIXES: tuple = ()
+# Faqat shu prefiks(lar) bilan boshlanuvchi callbacklar uchun klaviatura
+# olib tashlanadi. Bu — eski/cache xavfi bor bo'lgan tugmalar (offline
+# tugmasi yashirilgan, lekin user eski xabardagi tugmani bosishi mumkin).
+# Boshqa callbacklar uchun handler o'zi xabarni edit/delete qiladi —
+# shuning uchun bu middleware ularda ortiqcha API chaqiruvi qilmaydi.
+_STALE_PREFIXES: tuple = (
+    "pre_choose_",
+    "test_type_offline",
+)
 
 
-def _should_keep(call_data: str, keep_prefixes: Iterable[str]) -> bool:
+def _matches_any(call_data: str, prefixes: Iterable[str]) -> bool:
     if not call_data:
         return False
-    return any(call_data.startswith(p) for p in keep_prefixes)
+    return any(call_data.startswith(p) for p in prefixes)
 
 
 class InlineCleanupMiddleware(BaseMiddleware):
     """
-    Inline tugma bosilishi bilan asl xabardagi reply_markup ni olib tashlaydi
-    (oldindan), shu sababli foydalanuvchi eski tugmalarni qayta bosa olmaydi.
+    Eski/stale inline tugmalarni darhol o'chirib qo'yadi (chat tarixida
+    qolgan tugma user qayta bosa olmasin uchun).
 
-    Ishlash tartibi:
-      - Telegram callback yuboradi.
-      - Bu middleware *handler ishlamasdan oldin* xabardan klaviaturani
-        olib tashlaydi.
-      - Handler o'z ishini bajaradi (yangi xabar yuborish, edit_text bilan
-        yangi klaviatura qo'yish va h.k.) — bu doim middleware'dan keyin
-        ishlaydi, shuning uchun handler tomonidan o'rnatilgan klaviatura
-        joyida qoladi.
+    Performance: barcha callbacklar uchun emas, faqat _STALE_PREFIXES
+    ro'yxatidagi callbacklar uchun ishlaydi — qolganlarni handler o'zi
+    edit qiladi, shuning uchun ortiqcha API chaqiruv yo'q.
+
+    Strip operatsiyasi `asyncio.create_task` orqali fonda ishga tushadi —
+    handler kutmasdan davom etadi, shu sababli flow tezligi tushmaydi.
     """
 
-    def __init__(self, keep_prefixes: Iterable[str] = _KEEP_KB_PREFIXES):
+    def __init__(self, stale_prefixes: Iterable[str] = _STALE_PREFIXES):
         super().__init__()
-        self._keep_prefixes = tuple(keep_prefixes)
+        self._stale_prefixes = tuple(stale_prefixes)
 
     async def on_pre_process_callback_query(self, call: types.CallbackQuery, data: dict):
         message = call.message
@@ -43,10 +47,13 @@ class InlineCleanupMiddleware(BaseMiddleware):
             return
         if not getattr(message, "reply_markup", None):
             return
-        if _should_keep(call.data or "", self._keep_prefixes):
+        if not _matches_any(call.data or "", self._stale_prefixes):
             return
-        try:
-            await message.edit_reply_markup(reply_markup=None)
-        except Exception as e:
-            # Xabar bot tomonidan emas, eski (>48s), allaqachon o'chirilgan, va h.k.
-            logger.debug("InlineCleanup edit_reply_markup skipped: %r", e)
+
+        async def _strip() -> None:
+            try:
+                await message.edit_reply_markup(reply_markup=None)
+            except Exception as e:
+                logger.debug("InlineCleanup edit_reply_markup skipped: %r", e)
+
+        asyncio.create_task(_strip())

@@ -505,15 +505,28 @@ async def mark_register_job_success(
 async def cleanup_bot_messages(bot, chat_id: int, state: FSMContext, except_ids: Optional[Set[int]] = None):
     data = await state.get_data()
     ids: List[int] = data.get("bot_msg_ids", []) or []
+    if not ids:
+        return
+
     keep: List[int] = []
+    to_delete: List[int] = []
     for mid in ids:
         if except_ids and mid in except_ids:
             keep.append(mid)
-            continue
-        try:
-            await bot.delete_message(chat_id, mid)
-        except Exception:
-            pass
+        else:
+            to_delete.append(mid)
+
+    if to_delete:
+        async def _safe_delete(mid: int) -> None:
+            try:
+                await bot.delete_message(chat_id, mid)
+            except Exception:
+                pass
+
+        # Parallel delete — har bir delete_message ~150ms, ketma-ket bo'lsa
+        # bir necha soniyaga cho'zilib, FSM step'larining sekin ko'rinishiga sabab bo'ladi.
+        await asyncio.gather(*[_safe_delete(mid) for mid in to_delete])
+
     await state.update_data(bot_msg_ids=keep)
 
 async def send_clean(message_obj: types.Message, state: FSMContext, text: str, reply_markup=None, parse_mode=None):
