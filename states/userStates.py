@@ -12,6 +12,7 @@ class Registration(StatesGroup):
     district = State()
     school_type = State()
     school = State()
+    school_search = State()
 
     class_letter = State()
     

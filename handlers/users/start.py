@@ -287,6 +287,24 @@ TEXTS = {
     "school_type_school":   {"uz": "🏫 Umumta'lim maktabi", "ru": "🏫 Общеобразовательная школа"},
     "school_type_litsey":   {"uz": "🎓 Akademik litsey",     "ru": "🎓 Академический лицей"},
     "school_type_texnikum": {"uz": "🔧 Kasb-hunar texnikumi","ru": "🔧 Профессиональный техникум"},
+    "btn_school_search":    {"uz": "🔎 Nomi bo'yicha qidirish", "ru": "🔎 Поиск по названию"},
+    "btn_school_show_all":  {"uz": "📋 Barchasini ko'rsatish", "ru": "📋 Показать все"},
+    "school_search_ask": {
+        "uz": "🔎 Maktab nomini yoki kodini yozib yuboring (masalan: <code>IT-litsey</code> yoki <code>SHAY320</code>):",
+        "ru": "🔎 Введите название или код школы (например: <code>IT-лицей</code> или <code>SHAY320</code>):",
+    },
+    "school_search_too_short": {
+        "uz": "❗ Kamida 2 ta belgi yozing.",
+        "ru": "❗ Введите минимум 2 символа.",
+    },
+    "school_search_no_match": {
+        "uz": "🔍 Sizning so'rovingiz bo'yicha hech narsa topilmadi. Boshqacha yozib ko'ring yoki barchasini ochib ko'ring.",
+        "ru": "🔍 По вашему запросу ничего не найдено. Попробуйте ещё раз или откройте полный список.",
+    },
+    "school_search_results": {
+        "uz": "🔎 Qidiruv natijalari:",
+        "ru": "🔎 Результаты поиска:",
+    },
     "school_type_label": {
         "school":   {"uz": "Maktab",   "ru": "Школа"},
         "litsey":   {"uz": "Litsey",   "ru": "Лицей"},
@@ -1408,7 +1426,54 @@ def districts_kb(ui_lang: str, districts: List[str]):
     )
     return kb
 
+import difflib
+
 SCHOOL_TYPE_VALUES = ("school", "litsey", "texnikum")
+
+
+def _norm_search(s: str) -> str:
+    """Lowercase, strip, oddiy translit (apostroflar) — qidiruv uchun."""
+    s = (s or "").strip().lower()
+    # Apostrof variantlarini bittaga keltirish
+    for ch in ("ʻ", "ʼ", "‘", "’", "`", "'"):
+        s = s.replace(ch, "")
+    s = re.sub(r"\s+", " ", s)
+    return s
+
+
+def _school_match_score(query: str, school: Dict[str, Any]) -> float:
+    q = _norm_search(query)
+    if not q:
+        return 0.0
+    name = _norm_search(str(school.get("name") or ""))
+    code = _norm_search(str(school.get("code") or ""))
+    if q in name:
+        return 1.0
+    if q in code:
+        return 0.95
+    # Har bir so'z bo'yicha tekshirish
+    name_tokens = name.split()
+    if any(tok.startswith(q) for tok in name_tokens):
+        return 0.9
+    # Fuzzy fallback
+    ratio = difflib.SequenceMatcher(None, q, name).ratio()
+    return ratio
+
+
+def filter_schools_by_query(
+    query: str,
+    schools: List[Dict[str, Any]],
+    *,
+    limit: int = 30,
+    min_score: float = 0.55,
+) -> List[Dict[str, Any]]:
+    if not _norm_search(query):
+        return schools[:limit]
+    scored = [(_school_match_score(query, s), s) for s in (schools or []) if isinstance(s, dict)]
+    scored = [(sc, s) for sc, s in scored if sc >= min_score]
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [s for _, s in scored[:limit]]
+
 
 
 def normalize_school_type(value: Any) -> str:
@@ -1441,14 +1506,24 @@ def school_type_kb(ui_lang: str) -> InlineKeyboardMarkup:
     return kb
 
 
-def schools_kb(ui_lang: str, schools: List[Dict[str, Any]]):
+def schools_kb(
+    ui_lang: str,
+    schools: List[Dict[str, Any]],
+    *,
+    show_search: bool = True,
+    show_back_to_full: bool = False,
+):
     kb = InlineKeyboardMarkup(row_width=2)
-    for s in schools[:120]:
+    for s in schools[:60]:
         code = str(s.get("code") or "")
         name = str(s.get("name") or code)
         if not code:
             continue
         kb.insert(InlineKeyboardButton(name[:32], callback_data=f"reg_school:{code}"))
+    if show_search:
+        kb.row(InlineKeyboardButton(tr(ui_lang, "btn_school_search"), callback_data="reg_school_search"))
+    if show_back_to_full:
+        kb.row(InlineKeyboardButton(tr(ui_lang, "btn_school_show_all"), callback_data="reg_school_show_all"))
     kb.row(
         InlineKeyboardButton(tr(ui_lang, "btn_back"), callback_data="reg_back:school_type"),
         InlineKeyboardButton(tr(ui_lang, "btn_cancel"), callback_data="reg_cancel"),
@@ -2189,17 +2264,80 @@ async def reg_pick_school_type(call: types.CallbackQuery, state: FSMContext):
         return
 
     school_map = {}
+    schools_full = []
     for s in schools:
         code = str(s.get("code") or "")
         name = str(s.get("name") or code)
         if code:
             school_map[code] = name
-    await state.update_data(school_map=school_map)
+            schools_full.append({"code": code, "name": name})
+    await state.update_data(school_map=school_map, schools_full=schools_full)
 
     await edit_clean(call, state, tr(ui_lang, "school_pick_ask"), reply_markup=schools_kb(ui_lang, schools))
     await Registration.school.set()
 
-@dp.callback_query_handler(lambda c: c.data.startswith("reg_school:"), state=Registration.school)
+
+@dp.callback_query_handler(lambda c: c.data == "reg_school_search", state=[Registration.school, Registration.school_search])
+async def reg_school_search_prompt(call: types.CallbackQuery, state: FSMContext):
+    await call.answer()
+    data = await state.get_data()
+    ui_lang = data.get("ui_lang", "uz")
+    msg = await call.bot.send_message(
+        call.message.chat.id,
+        tr(ui_lang, "school_search_ask"),
+        parse_mode="HTML",
+    )
+    await state.update_data(bot_msg_ids=[msg.message_id])
+    await Registration.school_search.set()
+
+
+@dp.callback_query_handler(lambda c: c.data == "reg_school_show_all", state=[Registration.school, Registration.school_search])
+async def reg_school_show_all(call: types.CallbackQuery, state: FSMContext):
+    await call.answer()
+    data = await state.get_data()
+    ui_lang = data.get("ui_lang", "uz")
+    schools_full = data.get("schools_full") or []
+    if not schools_full:
+        await edit_clean(call, state, tr(ui_lang, "schools_not_found"), reply_markup=None)
+        return
+    await edit_clean(
+        call, state,
+        tr(ui_lang, "school_pick_ask"),
+        reply_markup=schools_kb(ui_lang, schools_full),
+    )
+    await Registration.school.set()
+
+
+@dp.message_handler(state=Registration.school_search, content_types=types.ContentType.TEXT)
+async def reg_school_search_input(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    ui_lang = data.get("ui_lang", "uz")
+    query = (message.text or "").strip()
+
+    if len(_norm_search(query)) < 2:
+        await message.answer(tr(ui_lang, "school_search_too_short"))
+        return
+
+    schools_full = data.get("schools_full") or []
+    matches = filter_schools_by_query(query, schools_full)
+
+    if not matches:
+        await message.answer(
+            tr(ui_lang, "school_search_no_match"),
+            reply_markup=schools_kb(ui_lang, [], show_search=True, show_back_to_full=True),
+        )
+        # State'ni school'ga qaytaramiz — show_all/back tugmalari ishlasin
+        await Registration.school.set()
+        return
+
+    await message.answer(
+        tr(ui_lang, "school_search_results"),
+        reply_markup=schools_kb(ui_lang, matches, show_search=True, show_back_to_full=True),
+    )
+    await Registration.school.set()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("reg_school:"), state=[Registration.school, Registration.school_search])
 async def reg_pick_school(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
     data = await state.get_data()
