@@ -278,11 +278,20 @@ TEXTS = {
 
     "region_ask": {"uz": "Viloyatni tanlang:", "ru": "Выберите регион:"},
     "district_ask": {"uz": "Tumanni tanlang:", "ru": "Выберите район:"},
+    "school_type_ask": {"uz": "Ta'lim muassasasi turini tanlang:", "ru": "Выберите тип учебного заведения:"},
     "school_pick_ask": {"uz": "Maktabni tanlang:", "ru": "Выберите школу:"},
 
     "regions_not_found": {"uz": "Viloyatlar topilmadi.", "ru": "Регионы не найдены."},
     "districts_not_found": {"uz": "Tumanlar topilmadi.", "ru": "Районы не найдены."},
     "schools_not_found": {"uz": "Maktablar topilmadi.", "ru": "Школы не найдены."},
+    "school_type_school":   {"uz": "🏫 Umumta'lim maktabi", "ru": "🏫 Общеобразовательная школа"},
+    "school_type_litsey":   {"uz": "🎓 Akademik litsey",     "ru": "🎓 Академический лицей"},
+    "school_type_texnikum": {"uz": "🔧 Kasb-hunar texnikumi","ru": "🔧 Профессиональный техникум"},
+    "school_type_label": {
+        "school":   {"uz": "Maktab",   "ru": "Школа"},
+        "litsey":   {"uz": "Litsey",   "ru": "Лицей"},
+        "texnikum": {"uz": "Texnikum", "ru": "Техникум"},
+    },
 
     "class_letter_ask": {
         "uz": "Sinf harfini tanlang (masalan: 11-A, 11-B bo‘lsa faqat harfni tanlang):",
@@ -341,6 +350,7 @@ CONF_LABELS = {
     "region": {"uz": "🌍 Viloyat", "ru": "🌍 Регион"},
     "district": {"uz": "🏙 Tuman", "ru": "🏙 Район"},
     "school": {"uz": "🏫 Maktab", "ru": "🏫 Школа"},
+    "school_type": {"uz": "🎓 Ta'lim turi", "ru": "🎓 Тип учреждения"},
     "class_letter": {"uz": "🏷 Sinf harfi", "ru": "🏷 Буква класса"},
     "exam_lang": {"uz": "🗣 Imtihon tili", "ru": "🗣 Язык экзамена"},
     "subj1": {"uz": "📘 1-fan", "ru": "📘 Предмет 1"},
@@ -569,14 +579,30 @@ async def fetch_districts(region: str) -> Dict[str, Any]:
         return {"ok": False, "status": 500, "text": f"Unexpected districts payload: {payload}"}
     return {"ok": True, "districts": payload.get("data") or []}
 
-async def fetch_schools(region: str, district: str) -> Dict[str, Any]:
+async def fetch_schools(region: str, district: str, school_type: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Maktablarni district bo'yicha oladi. school_type berilsa, javob shu turdagi
+    maktablar bilan filterlanadi (backend response'idagi `type` maydoniga qarab).
+    Backend filter bermasa ham, klient tomonida filterlanadi.
+    """
     url = f"{API_V1}/admin/districts-and-schools"
-    payload = await _api_get(url, {"region": region, "district": district})
+    params: Dict[str, Any] = {"region": region, "district": district}
+    if school_type:
+        params["type"] = normalize_school_type(school_type)
+    payload = await _api_get(url, params)
     if isinstance(payload, dict) and payload.get("ok") is False:
         return payload
     if not isinstance(payload, dict) or payload.get("type") != "schools":
         return {"ok": False, "status": 500, "text": f"Unexpected schools payload: {payload}"}
-    return {"ok": True, "schools": payload.get("data") or []}
+
+    schools = payload.get("data") or []
+    if school_type:
+        wanted = normalize_school_type(school_type)
+        # Backend response'da type bo'lsa filterlaymiz; yo'q bo'lsa o'zgartirmaymiz
+        # (eski endpoint type qaytarmagan bo'lishi mumkin — bu holda full list).
+        if any("type" in s for s in schools if isinstance(s, dict)):
+            schools = [s for s in schools if isinstance(s, dict) and normalize_school_type(s.get("type")) == wanted]
+    return {"ok": True, "schools": schools}
 
 # ----------------------------
 # JOBS JSON persistence helpers
@@ -1382,6 +1408,39 @@ def districts_kb(ui_lang: str, districts: List[str]):
     )
     return kb
 
+SCHOOL_TYPE_VALUES = ("school", "litsey", "texnikum")
+
+
+def normalize_school_type(value: Any) -> str:
+    """Backend default 'school'. Noma'lum/bo'sh → 'school'."""
+    if value is None:
+        return "school"
+    s = str(value).strip().lower()
+    if s in SCHOOL_TYPE_VALUES:
+        return s
+    return "school"
+
+
+def school_type_label(school_type: str, ui_lang: str = "uz") -> str:
+    mapping = TEXTS.get("school_type_label") or {}
+    entry = mapping.get(normalize_school_type(school_type)) or mapping.get("school") or {}
+    return entry.get(ui_lang) or entry.get("uz") or "Maktab"
+
+
+def school_type_kb(ui_lang: str) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup(row_width=1)
+    kb.add(
+        InlineKeyboardButton(tr(ui_lang, "school_type_school"),   callback_data="reg_school_type:school"),
+        InlineKeyboardButton(tr(ui_lang, "school_type_litsey"),   callback_data="reg_school_type:litsey"),
+        InlineKeyboardButton(tr(ui_lang, "school_type_texnikum"), callback_data="reg_school_type:texnikum"),
+    )
+    kb.row(
+        InlineKeyboardButton(tr(ui_lang, "btn_back"), callback_data="reg_back:district"),
+        InlineKeyboardButton(tr(ui_lang, "btn_cancel"), callback_data="reg_cancel"),
+    )
+    return kb
+
+
 def schools_kb(ui_lang: str, schools: List[Dict[str, Any]]):
     kb = InlineKeyboardMarkup(row_width=2)
     for s in schools[:120]:
@@ -1391,7 +1450,7 @@ def schools_kb(ui_lang: str, schools: List[Dict[str, Any]]):
             continue
         kb.insert(InlineKeyboardButton(name[:32], callback_data=f"reg_school:{code}"))
     kb.row(
-        InlineKeyboardButton(tr(ui_lang, "btn_back"), callback_data="reg_back:district"),
+        InlineKeyboardButton(tr(ui_lang, "btn_back"), callback_data="reg_back:school_type"),
         InlineKeyboardButton(tr(ui_lang, "btn_cancel"), callback_data="reg_cancel"),
     )
     return kb
@@ -1532,10 +1591,16 @@ def _subject_label(subject_id: Any, fallback_name: Any = None) -> str:
 def build_register_details(data: dict) -> str:
     first = _subject_label(data.get("first_subject_id"), data.get("first_subject_uz"))
     second = _subject_label(data.get("second_subject_id"), data.get("second_subject_uz"))
+    school_type_text = (
+        school_type_label(data["school_type"], "uz")
+        if data.get("school_type")
+        else "-"
+    )
     return (
         f"📞 <b>Phone:</b> <code>{data.get('phone','-')}</code>\n"
         f"🌍 <b>Region:</b> <code>{data.get('region','-')}</code>\n"
         f"🏙 <b>District:</b> <code>{data.get('district','-')}</code>\n"
+        f"🎓 <b>School type:</b> <code>{school_type_text}</code>\n"
         f"🏫 <b>School code:</b> <code>{data.get('school_code','-')}</code>\n"
         f"🏷 <b>Class letter:</b> <code>{data.get('class_letter') or data.get('group_name') or '-'}</code>\n"
         f"🗣 <b>Exam lang:</b> <code>{data.get('exam_lang') or data.get('language') or '-'}</code>\n"
@@ -1649,6 +1714,11 @@ def build_confirm_text(ui_lang: str, data: dict) -> str:
     second_label = data.get("second_subject_uz", "-") if ui_lang == "uz" else (data.get("second_subject_ru") or data.get("second_subject_uz") or "-")
 
     school_name = data.get("school_name") or "-"
+    school_type_text = (
+        school_type_label(data["school_type"], ui_lang)
+        if data.get("school_type")
+        else "-"
+    )
 
     lines = [
         tr(ui_lang, "confirm_title").rstrip(),
@@ -1658,6 +1728,7 @@ def build_confirm_text(ui_lang: str, data: dict) -> str:
         f"{lbl(ui_lang,'gender')}: {gender_label}",
         f"{lbl(ui_lang,'region')}: {data.get('region','-')}",
         f"{lbl(ui_lang,'district')}: {data.get('district','-')}",
+        f"{lbl(ui_lang,'school_type')}: {school_type_text}",
         f"{lbl(ui_lang,'school')}: {school_name}",
         f"{lbl(ui_lang,'class_letter')}: {data.get('class_letter','-')}",
         f"{lbl(ui_lang,'exam_lang')}: {exam_lang_label}",
@@ -2083,15 +2154,38 @@ async def reg_pick_district(call: types.CallbackQuery, state: FSMContext):
     district = call.data.split(":", 1)[1]
     await state.update_data(district=district)
 
+    await edit_clean(
+        call, state,
+        tr(ui_lang, "school_type_ask"),
+        reply_markup=school_type_kb(ui_lang),
+    )
+    await Registration.school_type.set()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("reg_school_type:"), state=Registration.school_type)
+async def reg_pick_school_type(call: types.CallbackQuery, state: FSMContext):
+    await call.answer()
+    data = await state.get_data()
+    ui_lang = data.get("ui_lang", "uz")
+
+    school_type = normalize_school_type(call.data.split(":", 1)[1])
+    await state.update_data(school_type=school_type)
+
     region = data.get("region")
-    res = await fetch_schools(region=region, district=district)
+    district = data.get("district")
+    res = await fetch_schools(region=region, district=district, school_type=school_type)
     if not (isinstance(res, dict) and res.get("ok")):
         await edit_clean(call, state, pretty_register_error(str(res), ui_lang), reply_markup=None)
         return
 
     schools = res.get("schools") or []
     if not schools:
-        await edit_clean(call, state, tr(ui_lang, "schools_not_found"), reply_markup=None)
+        # Bu turdagi maktab topilmadi — orqaga chiqarib boshqa tur tanlatamiz.
+        await edit_clean(
+            call, state,
+            tr(ui_lang, "schools_not_found"),
+            reply_markup=school_type_kb(ui_lang),
+        )
         return
 
     school_map = {}
@@ -2180,10 +2274,20 @@ async def reg_back(call: types.CallbackQuery, state: FSMContext):
         await Registration.district.set()
         return
 
+    if step == "school_type":
+        await edit_clean(
+            call, state,
+            tr(ui_lang, "school_type_ask"),
+            reply_markup=school_type_kb(ui_lang),
+        )
+        await Registration.school_type.set()
+        return
+
     if step == "school":
         region = data.get("region")
         district = data.get("district")
-        res = await fetch_schools(region=region, district=district)
+        school_type = data.get("school_type")
+        res = await fetch_schools(region=region, district=district, school_type=school_type)
         if not (isinstance(res, dict) and res.get("ok")):
             await edit_clean(call, state, pretty_register_error(str(res), ui_lang), reply_markup=None)
             return

@@ -10,6 +10,7 @@ class Registration(StatesGroup):
 
     region = State()
     district = State()
+    school_type = State()
     school = State()
 
     class_letter = State()
