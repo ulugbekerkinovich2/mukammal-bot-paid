@@ -34,7 +34,7 @@ from utils.send_req import (
     REGISTER_RETRY_ATTEMPTS,
 )
 from data.config import ADMIN_CHAT_ID, CHANNEL_USERNAME, CHANNEL_LINK
-from data.config import BASE_URL
+from data.config import BASE_URL, SECRET_KEY
 
 import asyncio
 from collections import defaultdict
@@ -610,29 +610,123 @@ async def fetch_districts(region: str) -> Dict[str, Any]:
         return {"ok": False, "status": 500, "text": f"Unexpected districts payload: {payload}"}
     return {"ok": True, "districts": payload.get("data") or []}
 
-async def fetch_schools(region: str, district: str, school_type: Optional[str] = None) -> Dict[str, Any]:
+def _extract_schools_list(payload: Any) -> Optional[List[Dict[str, Any]]]:
+    """Backend response'dan schools ro'yxatini ajratib oladi."""
+    if isinstance(payload, list):
+        return payload
+    if not isinstance(payload, dict):
+        return None
+    for key in ("items", "results", "schools", "data"):
+        v = payload.get(key)
+        if isinstance(v, list):
+            return v
+    return None
+
+
+async def _fetch_schools_dtm(region: str, district: str, school_type: Optional[str] = None) -> Dict[str, Any]:
     """
-    Maktablarni district bo'yicha oladi. school_type berilsa, javob shu turdagi
-    maktablar bilan filterlanadi (backend response'idagi `type` maydoniga qarab).
-    Backend filter bermasa ham, klient tomonida filterlanadi.
+    Yangi /api/v1/dtm/schools endpoint — har turdagi maktablar (school + litsey
+    + texnikum) bilan to'liq ro'yxat qaytaradi. X-API-Key talab qiladi.
     """
-    url = f"{API_V1}/admin/districts-and-schools"
-    params: Dict[str, Any] = {"region": region, "district": district}
+    url = f"{API_V1}/dtm/schools"
+    params: Dict[str, Any] = {"region": region, "district": district, "limit": 500}
     if school_type:
         params["type"] = normalize_school_type(school_type)
-    payload = await _api_get(url, params)
+    headers = {"accept": "application/json"}
+    api_key = (SECRET_KEY or "").strip()
+    if api_key:
+        headers["x-api-key"] = api_key
+
+    timeout = aiohttp.ClientTimeout(total=60)
+    logger.info(f"[fetch_schools_dtm] GET {url} params={params}")
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url, params=params, headers=headers) as r:
+                text = await r.text()
+                if r.status >= 400:
+                    logger.warning(f"[fetch_schools_dtm] {r.status}: {text[:300]}")
+                    return {"ok": False, "status": r.status, "text": text}
+                try:
+                    data = await r.json()
+                except Exception:
+                    return {"ok": False, "status": r.status, "text": text}
+                lst = _extract_schools_list(data)
+                if lst is None:
+                    return {"ok": False, "status": 500, "text": f"unexpected payload: {str(data)[:200]}"}
+                return {"ok": True, "schools": lst}
+    except asyncio.TimeoutError:
+        logger.error("[fetch_schools_dtm] TIMEOUT")
+        return {"ok": False, "status": 504, "text": "TimeoutError"}
+    except aiohttp.ClientError as e:
+        logger.error(f"[fetch_schools_dtm] ClientError: {repr(e)}")
+        return {"ok": False, "status": 503, "text": str(e)}
+
+
+async def _fetch_schools_legacy(region: str, district: str) -> Dict[str, Any]:
+    """Eski /admin/districts-and-schools endpoint — fallback (faqat oddiy maktablar)."""
+    url = f"{API_V1}/admin/districts-and-schools"
+    payload = await _api_get(url, {"region": region, "district": district})
     if isinstance(payload, dict) and payload.get("ok") is False:
         return payload
     if not isinstance(payload, dict) or payload.get("type") != "schools":
         return {"ok": False, "status": 500, "text": f"Unexpected schools payload: {payload}"}
+    return {"ok": True, "schools": payload.get("data") or []}
 
-    schools = payload.get("data") or []
+
+def _merge_schools_by_code(*lists: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Bir necha ro'yxatni code bo'yicha dedup qilib birlashtiradi (tartib saqlanadi)."""
+    seen = set()
+    out: List[Dict[str, Any]] = []
+    for lst in lists:
+        for s in (lst or []):
+            if not isinstance(s, dict):
+                continue
+            code = str(s.get("code") or "").strip()
+            if not code or code in seen:
+                continue
+            seen.add(code)
+            out.append(s)
+    return out
+
+
+async def fetch_schools(region: str, district: str, school_type: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Maktablarni district bo'yicha oladi. Avval yangi /dtm/schools endpoint'ni
+    sinaymiz (litsey + texnikum + oddiy maktab — to'liq ro'yxat). Agar u
+    ishlamasa yoki bo'sh javob bersa, eski /admin/districts-and-schools'ga
+    qaytamiz. Ikkalasi ham ishlasa, dedup qilib birlashtiramiz — backend
+    qaysi yangilangan-yangilanmasligidan qat'iy nazar foydalanuvchi to'liq
+    ro'yxatni ko'radi.
+
+    school_type berilgan bo'lsa, response'da type maydoni mavjud bo'lganlar
+    o'sha turga muvofiq filterlanadi (type'siz row'lar — legacy default
+    'school' deb hisoblanadi).
+    """
+    new_res = await _fetch_schools_dtm(region, district, school_type)
+    legacy_res = await _fetch_schools_legacy(region, district)
+
+    new_schools = new_res.get("schools") if new_res.get("ok") else []
+    legacy_schools = legacy_res.get("schools") if legacy_res.get("ok") else []
+
+    if not new_schools and not legacy_schools:
+        # Ikkalasi ham xato bo'lsa, asosiy javobni qaytarib xato sababini ko'rsatamiz.
+        if not new_res.get("ok") and not legacy_res.get("ok"):
+            return new_res if new_res.get("text") else legacy_res
+
+    schools = _merge_schools_by_code(new_schools or [], legacy_schools or [])
+
     if school_type:
         wanted = normalize_school_type(school_type)
-        # Backend response'da type bo'lsa filterlaymiz; yo'q bo'lsa o'zgartirmaymiz
-        # (eski endpoint type qaytarmagan bo'lishi mumkin — bu holda full list).
-        if any("type" in s for s in schools if isinstance(s, dict)):
-            schools = [s for s in schools if isinstance(s, dict) and normalize_school_type(s.get("type")) == wanted]
+        # type'siz row'larni 'school' deb hisoblash (legacy default).
+        schools = [
+            s for s in schools
+            if normalize_school_type(s.get("type")) == wanted
+        ]
+
+    logger.info(
+        f"[fetch_schools] district={district!r} type={school_type!r} "
+        f"new={len(new_schools or [])} legacy={len(legacy_schools or [])} merged={len(schools)}"
+    )
     return {"ok": True, "schools": schools}
 
 # ----------------------------
