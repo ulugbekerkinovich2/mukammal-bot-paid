@@ -1847,12 +1847,28 @@ def build_confirm_text(ui_lang: str, data: dict) -> str:
 # ----------------------------
 # Test type chooser
 # ----------------------------
-def test_type_kb(ui_lang: str = "uz") -> types.InlineKeyboardMarkup:
+def online_test_url(user_id: Optional[int] = None) -> str:
+    """
+    WebApp URL'ini chat_id parametri bilan qaytaradi. Frontend brauzerda
+    ochilganda chat_id'ni shu URL'dan o'qib avtomatik login qiladi
+    (Telegram WebApp ichida ochilsa initData ustunlik beradi).
+    """
     from data.config import WEBAPP_URL
+    base = (WEBAPP_URL or "").strip()
+    if not user_id:
+        return base
+    sep = "&" if ("?" in base) else "?"
+    return f"{base}{sep}chat_id={int(user_id)}"
+
+
+def test_type_kb(ui_lang: str = "uz", user_id: Optional[int] = None) -> types.InlineKeyboardMarkup:
     kb = types.InlineKeyboardMarkup(row_width=1)
     kb.add(
         types.InlineKeyboardButton(text=tr(ui_lang, "btn_offline_test"), callback_data="test_type_offline"),
-        types.InlineKeyboardButton(text=tr(ui_lang, "btn_online_test"), web_app=types.WebAppInfo(url=WEBAPP_URL)),
+        types.InlineKeyboardButton(
+            text=tr(ui_lang, "btn_online_test"),
+            web_app=types.WebAppInfo(url=online_test_url(user_id)),
+        ),
     )
     return kb
 
@@ -1898,13 +1914,12 @@ async def show_pre_register_test_type(message: types.Message, state: Optional[FS
         )
 
 
-def online_ready_kb(ui_lang: str = "uz") -> types.InlineKeyboardMarkup:
-    from data.config import WEBAPP_URL
+def online_ready_kb(ui_lang: str = "uz", user_id: Optional[int] = None) -> types.InlineKeyboardMarkup:
     kb = types.InlineKeyboardMarkup(row_width=1)
     kb.add(
         types.InlineKeyboardButton(
             text=tr(ui_lang, "btn_start_online_test"),
-            web_app=types.WebAppInfo(url=WEBAPP_URL),
+            web_app=types.WebAppInfo(url=online_test_url(user_id)),
         ),
     )
     return kb
@@ -1945,7 +1960,7 @@ async def _show_online_greeting(target_message: types.Message, user_id: int, ui_
     await target_message.bot.send_message(
         target_message.chat.id,
         tr(ui_lang, "btn_start_online_test"),
-        reply_markup=online_ready_kb(ui_lang),
+        reply_markup=online_ready_kb(ui_lang, user_id=user_id),
     )
 
 
@@ -1954,7 +1969,7 @@ async def _show_online_ready(target_message: types.Message, user_id: int, ui_lan
         target_message.chat.id,
         tr(ui_lang, "online_ready"),
         parse_mode="HTML",
-        reply_markup=online_ready_kb(ui_lang),
+        reply_markup=online_ready_kb(ui_lang, user_id=user_id),
     )
 
 
