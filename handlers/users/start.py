@@ -687,7 +687,10 @@ async def _fetch_schools_dtm(region: str, district: str, school_type: Optional[s
         bilan client-side filterlaymiz.
     """
     url = f"{API_V1}/dtm/schools"
-    params: Dict[str, Any] = {"limit": 500}
+    # Backend cheklovi: limit <= 200 (422 qaytaradi). 200 — litsey (74) +
+    # texnikum (18) bilan yetadi; school filtri bo'lganda ham district
+    # narrow qiladi.
+    params: Dict[str, Any] = {"limit": 200}
     normalized_type = normalize_school_type(school_type) if school_type else None
     if normalized_type:
         params["type"] = normalized_type
