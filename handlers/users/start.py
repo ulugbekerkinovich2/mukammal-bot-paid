@@ -279,7 +279,10 @@ TEXTS = {
     "region_ask": {"uz": "Viloyatni tanlang:", "ru": "Выберите регион:"},
     "district_ask": {"uz": "Tumanni tanlang:", "ru": "Выберите район:"},
     "school_type_ask": {"uz": "Ta'lim muassasasi turini tanlang:", "ru": "Выберите тип учебного заведения:"},
-    "school_pick_ask": {"uz": "Maktabni tanlang:", "ru": "Выберите школу:"},
+    "school_pick_ask": {
+        "uz": "Maktabni tanlang yoki nomini yozib yuboring:",
+        "ru": "Выберите школу или введите название:",
+    },
 
     "regions_not_found": {"uz": "Viloyatlar topilmadi.", "ru": "Регионы не найдены."},
     "districts_not_found": {"uz": "Tumanlar topilmadi.", "ru": "Районы не найдены."},
@@ -1729,7 +1732,7 @@ def schools_kb(
     ui_lang: str,
     schools: List[Dict[str, Any]],
     *,
-    show_search: bool = True,
+    show_search: bool = False,
     show_back_to_full: bool = False,
     back_to: str = "district",
 ):
@@ -2553,8 +2556,8 @@ async def reg_school_show_all(call: types.CallbackQuery, state: FSMContext):
     await Registration.school.set()
 
 
-@dp.message_handler(state=Registration.school_search, content_types=types.ContentType.TEXT)
-async def reg_school_search_input(message: types.Message, state: FSMContext):
+async def _handle_school_search_text(message: types.Message, state: FSMContext) -> None:
+    """Real-time qidiruv: user school step'da yozgan har matn search query sifatida ishlaydi."""
     data = await state.get_data()
     ui_lang = data.get("ui_lang", "uz")
     query = (message.text or "").strip()
@@ -2569,17 +2572,24 @@ async def reg_school_search_input(message: types.Message, state: FSMContext):
     if not matches:
         await message.answer(
             tr(ui_lang, "school_search_no_match"),
-            reply_markup=schools_kb(ui_lang, [], show_search=True, show_back_to_full=True),
+            reply_markup=schools_kb(ui_lang, [], show_search=False, show_back_to_full=True),
         )
-        # State'ni school'ga qaytaramiz — show_all/back tugmalari ishlasin
         await Registration.school.set()
         return
 
     await message.answer(
         tr(ui_lang, "school_search_results"),
-        reply_markup=schools_kb(ui_lang, matches, show_search=True, show_back_to_full=True),
+        reply_markup=schools_kb(ui_lang, matches, show_search=False, show_back_to_full=True),
     )
     await Registration.school.set()
+
+
+@dp.message_handler(
+    state=[Registration.school, Registration.school_search],
+    content_types=types.ContentType.TEXT,
+)
+async def reg_school_search_input(message: types.Message, state: FSMContext):
+    await _handle_school_search_text(message, state)
 
 
 @dp.callback_query_handler(lambda c: c.data.startswith("reg_school:"), state=[Registration.school, Registration.school_search])
