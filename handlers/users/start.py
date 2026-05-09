@@ -13,7 +13,14 @@ from aiogram import types
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters import Text, Command
 from aiogram.dispatcher.filters.builtin import CommandStart
-from aiogram.types import ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import (
+    ReplyKeyboardRemove,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    InlineQuery,
+    InlineQueryResultArticle,
+    InputTextMessageContent,
+)
 
 from loader import dp
 from keyboards.default.userKeyboard import keyboard_user
@@ -291,6 +298,10 @@ TEXTS = {
     "school_type_litsey":   {"uz": "🎓 Akademik litsey",     "ru": "🎓 Академический лицей"},
     "school_type_texnikum": {"uz": "🔧 Kasb-hunar texnikumi","ru": "🔧 Профессиональный техникум"},
     "btn_school_search":    {"uz": "🔎 Nomi bo'yicha qidirish", "ru": "🔎 Поиск по названию"},
+    "btn_school_inline_search": {
+        "uz": "⚡️ Tezkor qidiruv (real-time)",
+        "ru": "⚡️ Быстрый поиск (real-time)",
+    },
     "btn_school_show_all":  {"uz": "📋 Barchasini ko'rsatish", "ru": "📋 Показать все"},
     "school_search_ask": {
         "uz": "🔎 Maktab nomini yoki kodini yozib yuboring (masalan: <code>IT-litsey</code> yoki <code>SHAY320</code>):",
@@ -1728,12 +1739,19 @@ def school_type_kb(ui_lang: str, *, show_all_fallback: bool = False) -> InlineKe
     return kb
 
 
+# Inline mode orqali qidirilgan natija bossanga, bot xabar matnida shu marker
+# bilan school_code yashirin yuboradi. Message handler shu marker'ni topib
+# tegishli maktabni FSM ga qo'yadi.
+INLINE_PICK_PREFIX = "##sch##:"
+
+
 def schools_kb(
     ui_lang: str,
     schools: List[Dict[str, Any]],
     *,
     show_search: bool = False,
     show_back_to_full: bool = False,
+    show_inline_search: bool = True,
     back_to: str = "district",
 ):
     kb = InlineKeyboardMarkup(row_width=2)
@@ -1743,6 +1761,10 @@ def schools_kb(
         if not code:
             continue
         kb.insert(InlineKeyboardButton(name[:32], callback_data=f"reg_school:{code}"))
+    if show_inline_search:
+        # switch_inline_query_current_chat — joriy chat'da `@bot ` deb yozadi va
+        # foydalanuvchi har keystroke'da real-time inline natijalarni ko'radi.
+        kb.row(InlineKeyboardButton(tr(ui_lang, "btn_school_inline_search"), switch_inline_query_current_chat=""))
     if show_search:
         kb.row(InlineKeyboardButton(tr(ui_lang, "btn_school_search"), callback_data="reg_school_search"))
     if show_back_to_full:
@@ -2584,12 +2606,128 @@ async def _handle_school_search_text(message: types.Message, state: FSMContext) 
     await Registration.school.set()
 
 
+async def _pick_school_by_code(message: types.Message, state: FSMContext, school_code: str) -> bool:
+    """Inline natija bossanga, message_text ichidagi marker'dan school_code'ni
+    olib FSM'ga qo'yamiz va class_letter step'ga o'tamiz."""
+    school_code = (school_code or "").strip()
+    if not school_code:
+        return False
+
+    data = await state.get_data()
+    ui_lang = data.get("ui_lang", "uz")
+    schools_full = data.get("schools_full") or []
+
+    school_name = school_code
+    for s in schools_full:
+        if str(s.get("code") or "").strip() == school_code:
+            school_name = s.get("name") or school_code
+            break
+
+    await state.update_data(school_code=school_code, school_name=school_name)
+    await message.answer(
+        f"✅ Maktab tanlandi: {school_name}" if ui_lang == "uz" else f"✅ Школа выбрана: {school_name}",
+    )
+    msg = await message.answer(
+        tr(ui_lang, "class_letter_ask"),
+        reply_markup=class_letter_kb(ui_lang),
+        disable_web_page_preview=True,
+    )
+    await state.update_data(bot_msg_ids=[msg.message_id])
+    await Registration.class_letter.set()
+    return True
+
+
 @dp.message_handler(
     state=[Registration.school, Registration.school_search],
     content_types=types.ContentType.TEXT,
 )
 async def reg_school_search_input(message: types.Message, state: FSMContext):
+    text = message.text or ""
+    # Inline natija orqali kelgan xabarmi? Marker tekshiramiz.
+    if INLINE_PICK_PREFIX in text:
+        # Marker keyingi qator yoki probelgacha bo'lgan kodni o'qiymiz
+        code_match = re.search(rf"{re.escape(INLINE_PICK_PREFIX)}([A-Za-z0-9_\-]+)", text)
+        if code_match:
+            picked = await _pick_school_by_code(message, state, code_match.group(1))
+            if picked:
+                return
     await _handle_school_search_text(message, state)
+
+
+# ---- Inline mode: real-time school search ----------------------------------
+@dp.inline_handler()
+async def inline_school_search(query: InlineQuery):
+    """
+    User chat'da `@bot <so'rov>` yozadi → har keystroke'da bu handler
+    chaqiriladi → schools_full ichidan filter qilingan natijalarni card
+    sifatida qaytaradi. User card'ni bosa, message_text bot'ga yuboriladi
+    va INLINE_PICK_PREFIX orqali school_code aniqlanadi.
+    """
+    text = (query.query or "").strip()
+    user_id = query.from_user.id
+
+    state = dp.current_state(chat=user_id, user=user_id)
+    data = await state.get_data()
+    schools_full: List[Dict[str, Any]] = data.get("schools_full") or []
+    ui_lang = data.get("ui_lang", "uz")
+
+    if not schools_full:
+        # Foydalanuvchi registratsiya FSM'ida emas yoki schools_full bo'sh.
+        msg = (
+            "Avval botda /start bosing va Viloyat → Tuman → Ta'lim turini tanlang."
+            if ui_lang == "uz" else
+            "Сначала откройте бота через /start и выберите Регион → Район → Тип учреждения."
+        )
+        await query.answer(
+            results=[],
+            cache_time=1,
+            is_personal=True,
+            switch_pm_text=msg[:64],
+            switch_pm_parameter="start",
+        )
+        return
+
+    if len(_norm_search(text)) < 1:
+        matches = schools_full[:30]
+    else:
+        matches = filter_schools_by_query(text, schools_full, limit=30)
+
+    results: List[InlineQueryResultArticle] = []
+    for s in matches:
+        code = str(s.get("code") or "").strip()
+        name = str(s.get("name") or code).strip()
+        region = str(s.get("region") or "").strip()
+        district = str(s.get("district") or "").strip()
+        if not code:
+            continue
+        descr = " / ".join([p for p in (region, district) if p]) or "—"
+
+        # Foydalanuvchi tanlasa, shu matn bot chat'iga yuboriladi.
+        # INLINE_PICK_PREFIX bilan school_code yashirin marker.
+        body_text = (
+            f"🏫 <b>{html.escape(name)}</b>\n"
+            f"📍 <i>{html.escape(descr)}</i>\n"
+            f"<code>{INLINE_PICK_PREFIX}{html.escape(code)}</code>"
+        )
+
+        results.append(
+            InlineQueryResultArticle(
+                id=code[:64],
+                title=name[:80] or code,
+                description=descr[:80],
+                input_message_content=InputTextMessageContent(
+                    message_text=body_text,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                ),
+            )
+        )
+
+    await query.answer(
+        results=results,
+        cache_time=1,
+        is_personal=True,
+    )
 
 
 @dp.callback_query_handler(lambda c: c.data.startswith("reg_school:"), state=[Registration.school, Registration.school_search])
