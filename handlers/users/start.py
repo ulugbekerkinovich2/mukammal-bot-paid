@@ -2655,7 +2655,7 @@ async def reg_school_search_input(message: types.Message, state: FSMContext):
 
 
 # ---- Inline mode: real-time school search ----------------------------------
-@dp.inline_handler()
+@dp.inline_handler(state="*")
 async def inline_school_search(query: InlineQuery):
     """
     User chat'da `@bot <so'rov>` yozadi → har keystroke'da bu handler
