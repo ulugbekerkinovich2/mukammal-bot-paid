@@ -2666,31 +2666,44 @@ async def inline_school_search(query: InlineQuery):
     text = (query.query or "").strip()
     user_id = query.from_user.id
 
-    state = dp.current_state(chat=user_id, user=user_id)
-    data = await state.get_data()
+    logger.info(f"[inline_school_search] received query from user_id={user_id} text={text!r}")
+
+    try:
+        state = dp.current_state(chat=user_id, user=user_id)
+        data = await state.get_data()
+    except Exception as e:
+        logger.exception(f"[inline_school_search] state load failed: {e}")
+        data = {}
+
     schools_full: List[Dict[str, Any]] = data.get("schools_full") or []
     ui_lang = data.get("ui_lang", "uz")
 
+    logger.info(f"[inline_school_search] schools_full={len(schools_full)} ui_lang={ui_lang}")
+
     if not schools_full:
-        # Foydalanuvchi registratsiya FSM'ida emas yoki schools_full bo'sh.
         msg = (
             "Avval botda /start bosing va Viloyat → Tuman → Ta'lim turini tanlang."
             if ui_lang == "uz" else
             "Сначала откройте бота через /start и выберите Регион → Район → Тип учреждения."
         )
-        await query.answer(
-            results=[],
-            cache_time=1,
-            is_personal=True,
-            switch_pm_text=msg[:64],
-            switch_pm_parameter="start",
-        )
+        try:
+            await query.answer(
+                results=[],
+                cache_time=1,
+                is_personal=True,
+                switch_pm_text=msg[:64],
+                switch_pm_parameter="start",
+            )
+        except Exception as e:
+            logger.exception(f"[inline_school_search] empty answer failed: {e}")
         return
 
     if len(_norm_search(text)) < 1:
         matches = schools_full[:30]
     else:
         matches = filter_schools_by_query(text, schools_full, limit=30)
+
+    logger.info(f"[inline_school_search] matches={len(matches)}")
 
     results: List[InlineQueryResultArticle] = []
     for s in matches:
@@ -2702,8 +2715,6 @@ async def inline_school_search(query: InlineQuery):
             continue
         descr = " / ".join([p for p in (region, district) if p]) or "—"
 
-        # Foydalanuvchi tanlasa, shu matn bot chat'iga yuboriladi.
-        # INLINE_PICK_PREFIX bilan school_code yashirin marker.
         body_text = (
             f"🏫 <b>{html.escape(name)}</b>\n"
             f"📍 <i>{html.escape(descr)}</i>\n"
@@ -2723,11 +2734,15 @@ async def inline_school_search(query: InlineQuery):
             )
         )
 
-    await query.answer(
-        results=results,
-        cache_time=1,
-        is_personal=True,
-    )
+    try:
+        await query.answer(
+            results=results,
+            cache_time=1,
+            is_personal=True,
+        )
+        logger.info(f"[inline_school_search] answered with {len(results)} results")
+    except Exception as e:
+        logger.exception(f"[inline_school_search] answer failed: {e}")
 
 
 @dp.callback_query_handler(lambda c: c.data.startswith("reg_school:"), state=[Registration.school, Registration.school_search])
