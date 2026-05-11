@@ -2637,20 +2637,39 @@ async def _pick_school_by_code(message: types.Message, state: FSMContext, school
     return True
 
 
+def _extract_inline_school_code(text: str) -> Optional[str]:
+    """Inline natija card'idan school_code'ni topish.
+
+    Yangi card format'i: oxirgi qatorda `🏷 CODE` (yoki `🏷 <code>CODE</code>`
+    render bo'lgan).
+    Eski format (backward compat): `##sch##:CODE` marker.
+    """
+    if not text:
+        return None
+    m = re.search(r"🏷\s+([A-Za-z0-9_\-]{2,})\s*$", text, flags=re.MULTILINE)
+    if m:
+        return m.group(1)
+    m = re.search(rf"{re.escape(INLINE_PICK_PREFIX)}([A-Za-z0-9_\-]+)", text)
+    if m:
+        return m.group(1)
+    return None
+
+
 @dp.message_handler(
     state=[Registration.school, Registration.school_search],
     content_types=types.ContentType.TEXT,
 )
 async def reg_school_search_input(message: types.Message, state: FSMContext):
     text = message.text or ""
-    # Inline natija orqali kelgan xabarmi? Marker tekshiramiz.
-    if INLINE_PICK_PREFIX in text:
-        # Marker keyingi qator yoki probelgacha bo'lgan kodni o'qiymiz
-        code_match = re.search(rf"{re.escape(INLINE_PICK_PREFIX)}([A-Za-z0-9_\-]+)", text)
-        if code_match:
-            picked = await _pick_school_by_code(message, state, code_match.group(1))
-            if picked:
-                return
+
+    # Inline natija orqali kelgan xabar (via_bot bilan keladi)? Code'ni
+    # ajratib olib darhol school'ni pick qilamiz.
+    inline_code = _extract_inline_school_code(text)
+    if inline_code or message.via_bot:
+        code = inline_code or _extract_inline_school_code(text)
+        if code and await _pick_school_by_code(message, state, code):
+            return
+
     await _handle_school_search_text(message, state)
 
 
@@ -2705,27 +2724,46 @@ async def inline_school_search(query: InlineQuery):
 
     logger.info(f"[inline_school_search] matches={len(matches)}")
 
+    type_emoji = {"litsey": "🎓", "texnikum": "🔧", "school": "🏫"}
+    type_label_uz = {"litsey": "Litsey", "texnikum": "Texnikum", "school": "Maktab"}
+
     results: List[InlineQueryResultArticle] = []
     for s in matches:
         code = str(s.get("code") or "").strip()
         name = str(s.get("name") or code).strip()
         region = str(s.get("region") or "").strip()
         district = str(s.get("district") or "").strip()
+        stype = normalize_school_type(s.get("type"))
         if not code:
             continue
-        descr = " / ".join([p for p in (region, district) if p]) or "—"
 
-        body_text = (
-            f"🏫 <b>{html.escape(name)}</b>\n"
-            f"📍 <i>{html.escape(descr)}</i>\n"
-            f"<code>{INLINE_PICK_PREFIX}{html.escape(code)}</code>"
-        )
+        emoji = type_emoji.get(stype, "🏫")
+        type_label = type_label_uz.get(stype, "Maktab")
+
+        # Description: location + type. Telegram card'da bitta qator
+        # ostida ko'rinadi, qisqa va tabiiy.
+        loc = " · ".join(p for p in (region, district) if p)
+        descr_line = f"{loc} · {type_label}" if loc else type_label
+
+        title = f"{emoji} {name}"
+
+        # User card'ni bossanga, bot chat'iga shu format jo'natiladi —
+        # toza, ko'ringan kelishimli. Oxiridagi `🏷 <code>...</code>`
+        # qatori bot tomonidan school_code'ni parse qilish uchun marker.
+        body_lines = [f"{emoji} <b>{html.escape(name)}</b>"]
+        if region:
+            body_lines.append(f"🌍 {html.escape(region)}")
+        if district:
+            body_lines.append(f"🏙 {html.escape(district)}")
+        body_lines.append(f"📚 {html.escape(type_label)}")
+        body_lines.append(f"🏷 <code>{html.escape(code)}</code>")
+        body_text = "\n".join(body_lines)
 
         results.append(
             InlineQueryResultArticle(
                 id=code[:64],
-                title=name[:80] or code,
-                description=descr[:80],
+                title=title[:100],
+                description=descr_line[:120],
                 input_message_content=InputTextMessageContent(
                     message_text=body_text,
                     parse_mode="HTML",
