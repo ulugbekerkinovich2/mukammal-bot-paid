@@ -2727,6 +2727,13 @@ async def inline_school_search(query: InlineQuery):
     type_emoji = {"litsey": "🎓", "texnikum": "🔧", "school": "🏫"}
     type_label_uz = {"litsey": "Litsey", "texnikum": "Texnikum", "school": "Maktab"}
 
+    # Telegram inline article card'da thumbnail maydoni mobile'da har doim
+    # band bo'ladi — agar thumb_url berilmasa, default icon chiqadi. Bizning
+    # card kerakli ma'lumotni title/description'da ko'rsatadi va thumbnail
+    # ortiqcha — shu sababli 1x1 shaffof rasm uzatamiz (placeholder o'rniga
+    # ko'rinmas joy qoladi).
+    TRANSPARENT_THUMB = "https://www.google.com/images/cleardot.gif"
+
     results: List[InlineQueryResultArticle] = []
     for s in matches:
         code = str(s.get("code") or "").strip()
@@ -2764,6 +2771,9 @@ async def inline_school_search(query: InlineQuery):
                 id=code[:64],
                 title=title[:100],
                 description=descr_line[:120],
+                thumb_url=TRANSPARENT_THUMB,
+                thumb_width=1,
+                thumb_height=1,
                 input_message_content=InputTextMessageContent(
                     message_text=body_text,
                     parse_mode="HTML",
