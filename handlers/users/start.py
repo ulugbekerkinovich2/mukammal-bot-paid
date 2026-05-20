@@ -28,6 +28,7 @@ from aiogram.types import InputFile
 import io
 from utils.my_redis import redis
 from aiogram.types import ContentType
+import asyncio
 
 # redis_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
 
@@ -35,37 +36,54 @@ from aiogram.types import ContentType
 
 @dp.message_handler(CommandStart(), state="*")
 async def bot_start(message: types.Message, state: FSMContext):
-    await state.finish()
     user_id = message.from_user.id
-    data = await state.get_data()
-    # user 5 ga tekshir
-    get_user_id_5 = await get_user(user_id, 5)
+
+    # subscription_checked redis dan o'qiymiz (FSM finish() ni omon qoladi)
+    sub_key = f"{user_id}_subscription_checked"
+    subscription_checked = await redis.exists(sub_key)
+
+    await state.finish()
+
+    # user 5 va 7 ni parallel tekshirish
+    get_user_id_5, get_user_id_7 = await asyncio.gather(
+        get_user(user_id, 5),
+        get_user(user_id, 7),
+    )
+
     if get_user_id_5 is None:
-        await add_chat_id(
-            chat_id_user=user_id,
-            first_name_user=message.from_user.first_name or "not found",
-            last_name_user=message.from_user.last_name or "not found",
-            pin=message.from_user.username or "not found",
-            phone="1",
-            username=message.from_user.username or "not found",
-            date=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        )
+        try:
+            await add_chat_id(
+                chat_id_user=user_id,
+                first_name_user=message.from_user.first_name or "not found",
+                last_name_user=message.from_user.last_name or "not found",
+                pin=message.from_user.username or "not found",
+                phone="1",
+                username=message.from_user.username or "not found",
+                date=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            )
+        except Exception as e:
+            ic("add_chat_id failed:", e)
 
-    # user 7 ga tekshir
-    get_user_id_7 = await get_user(user_id, 7)
     if get_user_id_7 is None:
-        ads = save_chat_id(
-            chat_id=user_id,
-            firstname=message.from_user.first_name or "not found",
-            lastname=message.from_user.last_name or "not found",
-            bot_id=7,
-            username=message.from_user.username or "not found",
-            status="active"
-        )
-        print(ads)
+        # sync requests.post — event loop ni bloklamaslik uchun executor da
+        try:
+            loop = asyncio.get_event_loop()
+            ads = await loop.run_in_executor(
+                None,
+                save_chat_id,
+                user_id,
+                message.from_user.first_name or "not found",
+                message.from_user.last_name or "not found",
+                7,
+                message.from_user.username or "not found",
+                "active",
+            )
+            print(ads)
+        except Exception as e:
+            ic("save_chat_id executor failed:", e)
 
-    # Avval tekshirilgan bo‘lsa qayta so‘ralmasin
-    if not data.get("subscription_checked"):
+    # Subscription gate
+    if not subscription_checked:
         try:
             member = await bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
 
@@ -81,18 +99,17 @@ async def bot_start(message: types.Message, state: FSMContext):
                 )
                 return
             else:
-                await state.update_data(subscription_checked=True)
+                await redis.set(sub_key, "1", ex=86400)  # 24h cache
         except Exception as e:
+            ic("subscription check failed:", type(e).__name__, str(e))
             await message.answer("⚠️ Tekshiruvda xatolik. Keyinroq urinib ko‘ring.")
             return
-    
-    # from keyboards.default.userKeyboard import keyboard_user
+
     if str(user_id) in ADMINS:
         keyboard = adminKeyboard_user
     else:
         keyboard = keyboard_user
 
-    # Xush kelibsiz xabari
     await message.answer(
         "🎓 <b>Mentalaba botiga xush kelibsiz!</b>\n\n"
         "📲 <b>Tizimga kirish uchun telefon raqamingizni yuboring.</b>\n"
@@ -101,15 +118,10 @@ async def bot_start(message: types.Message, state: FSMContext):
         reply_markup=keyboard,
         parse_mode="HTML"
     )
-    # ic(user_id, type(user_id), ADMINS)
-    # Faqat oddiy userlarga state berish
-    if str(user_id) not in ADMINS:
-        await Registration.phone.set()
 
-    
-    
-    # Bu yerda state ni Redis ga yozish
-    user_id = message.from_user.id
+    # Phone state — admin uchun ham (admin panel state='*' bilan ishlaydi, konflikt yo'q)
+    await Registration.phone.set()
+
     await save_user_state(user_id=user_id, state="startni bosgan", username=message.from_user.username, saved_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
 
@@ -121,7 +133,7 @@ async def check_subscription(callback_query: types.CallbackQuery, state: FSMCont
         member = await bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
 
         if member.status in ["member", "creator", "administrator"]:
-            await state.update_data(subscription_checked=True)
+            await redis.set(f"{user_id}_subscription_checked", "1", ex=86400)
             await callback_query.message.delete()
 
             await callback_query.message.answer(
