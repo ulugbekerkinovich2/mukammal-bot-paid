@@ -3,31 +3,20 @@ from aiogram.dispatcher.filters.builtin import CommandStart
 from aiogram.dispatcher import FSMContext
 from loader import dp, bot
 from keyboards.default.userKeyboard import keyboard_user, strong_pass, continue_button, restart_markup, adminKeyboard_user
-import aiogram.types
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove, InputFile, ContentType
 import re
-from states.userStates import Registration
-import utils
+from states.userStates import Registration, FullRegistration, DeleteUser
 from utils.send_req import auth_check, user_register, user_verify, user_info, user_login, delete_user, upload_image, fetch_regions, district_locations, fetch_educations,\
-upload_file, me, update_application_form
-from aiogram.types import ReplyKeyboardRemove
+upload_file, me, update_application_form, get_user, add_chat_id, change_password, reset_password, user_verify_by_id, save_chat_id
 from datetime import datetime
 from keyboards.inline.user_inline import share_button, gender_button, help_button, forget_password_button
 from data.config import CHANNEL_ID, ADMINS
 from icecream import ic
-from states.userStates import Registration, FullRegistration, DeleteUser
 from utils.my_redis import redis
 import json
-from utils.send_req import get_user, add_chat_id, change_password, reset_password, user_verify_by_id, save_chat_id
 from middlewares.throttling import save_user_state
-from redis.asyncio import Redis
-from aiogram import types
-from aiogram.dispatcher import FSMContext
 import pandas as pd
-from aiogram.types import InputFile
 import io
-from utils.my_redis import redis
-from aiogram.types import ContentType
 import asyncio
 
 # redis_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
@@ -136,11 +125,12 @@ async def check_subscription(callback_query: types.CallbackQuery, state: FSMCont
             await redis.set(f"{user_id}_subscription_checked", "1", ex=86400)
             await callback_query.message.delete()
 
+            kb = adminKeyboard_user if str(user_id) in ADMINS else keyboard_user
             await callback_query.message.answer(
                 "🎓 <b>Mentalaba botiga xush kelibsiz!</b>\n\n"
                 "📲 <b>Tizimga kirish uchun telefon raqamingizni yuboring.</b>\n"
                 "Iltimos, raqamni <u>faqat 9 ta raqam bilan</u> kiriting (masalan: <code>901234567</code>).",
-                reply_markup=keyboard_user,
+                reply_markup=kb,
                 parse_mode="HTML"
             )
             await Registration.phone.set()
@@ -187,9 +177,8 @@ async def phone_number(message: types.Message, state: FSMContext):
     data = {
         "phone": phone
     }
-
-    if not await redis.exists(key):
-        await redis.set(key, json.dumps(data), ex=157680000)
+    # har safar yangilash — user telefon o'zgartirsa stale qolmasin
+    await redis.set(key, json.dumps(data), ex=157680000)
 
     try:
         data_ = await auth_check(phone=phone)
@@ -225,23 +214,32 @@ async def phone_number(message: types.Message, state: FSMContext):
 @dp.message_handler(state=Registration.password)
 async def password_user(message: types.Message, state: FSMContext):
     get_user_password = message.text.strip()
-    await state.update_data(password=get_user_password)
 
+    if len(get_user_password) < 8:
+        await message.answer("❌ Parol kamida 8 ta belgidan iborat bo'lishi kerak. Qaytadan kiriting.")
+        return
+
+    await state.update_data(password=get_user_password)
     user_data = await state.get_data()
     phone = user_data.get("phone")
     password = user_data.get("password")
 
-    response, status_ = await user_register(phone=phone, password=password)
+    try:
+        response, status_ = await user_register(phone=phone, password=password)
+    except Exception as e:
+        ic("user_register exception:", type(e).__name__, str(e))
+        await message.answer("⚠️ Server bilan bog'lanishda xatolik. Iltimos, keyinroq urinib ko'ring.")
+        return
+
     ic(response)
+    user_id = message.from_user.id
     if status_ == 201:
         await message.answer("Raqamingizga yuborilgan tasdiqlash kodini kiriting.")
         ic("Registered:", response)
         await Registration.verify.set()
-        user_id = message.from_user.id
         await save_user_state(user_id=user_id, state="raqamga tasdiqlash kodi yuborilgan", username=message.from_user.username, saved_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     else:
         await message.answer("Sms yuborish limiti cheklangan 5 daqiqadan so'ng urinib ko'ring.")
-        user_id = message.from_user.id
         await save_user_state(user_id=user_id, state="raqamga tasdiqlash kodi yuborilgan, limitdan o'tgan", username=message.from_user.username, saved_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
 @dp.message_handler(state=Registration.verify)
@@ -257,19 +255,26 @@ async def verify_user(message: types.Message, state: FSMContext):
 
     try:
         response, status_ = await user_verify(phone=phone, code=code)
+        ic(154, response, status_)
+
+        if status_ != 201:
+            await message.answer("❌ Kod noto'g'ri yoki muddati o'tgan. Qayta urinib ko'ring.")
+            return
+
+        if not isinstance(response, dict):
+            ic("user_verify unexpected response shape:", repr(response))
+            await message.answer("⚠️ Serverdan kutilmagan javob. /start ni qaytadan bosing.")
+            return
+
         token = response.get("token")
         auth_key = response.get("auth_key")
         haveApplicationForm = response.get("haveApplicationForm")
-        ic(154, response, status_, token)
         await state.update_data(token=token, auth_key=auth_key, haveApplicationForm=haveApplicationForm)
-        # Aytaylik, server True/False yoki JSON qaytaradi
-        if status_ == 201:
-            await message.answer("️️Passport yoki ID karta seriya raqamini kiriting.\nNamuna: AC1234567")
-            await Registration.pinfl.set()
-            user_id = message.from_user.id
-            await save_user_state(user_id=user_id, state="passport so'raldi", username=message.from_user.username, saved_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-        else:
-            await message.answer("❌ Kod noto‘g‘ri yoki muddati o‘tgan. Qayta urinib ko‘ring.")
+
+        await message.answer("️️Passport yoki ID karta seriya raqamini kiriting.\nNamuna: AC1234567")
+        await Registration.pinfl.set()
+        user_id = message.from_user.id
+        await save_user_state(user_id=user_id, state="passport so'raldi", username=message.from_user.username, saved_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     except Exception as e:
         ic("Xatolik:", e)
         await message.answer("⚠️ Ichki tizimda xatolik yuz berdi. Iltimos, keyinroq urinib ko‘ring.")
