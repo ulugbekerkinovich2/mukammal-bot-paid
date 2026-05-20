@@ -424,9 +424,12 @@ def save_chat_id(chat_id,firstname, lastname,bot_id,username,status):
         "status": status
         }
     ic(data)
-    response = requests.post(url, json=data)
-    
-    return response.json()
+    try:
+        response = requests.post(url, json=data, timeout=5)
+        return response.json()
+    except Exception as e:
+        ic("save_chat_id FAILED:", type(e).__name__, str(e))
+        return None
 
 import psycopg2
 from dotenv import load_dotenv
