@@ -179,14 +179,20 @@ async def phone_number(message: types.Message, state: FSMContext):
     if not await redis.exists(key):
         await redis.set(key, json.dumps(data), ex=157680000)
 
-    data_ = await auth_check(phone=phone)
+    try:
+        data_ = await auth_check(phone=phone)
+    except Exception as e:
+        ic("auth_check exception:", e)
+        await message.answer("⚠️ Server bilan bog'lanishda xatolik. Iltimos, keyinroq urinib ko'ring.")
+        return
 
     ic("auth_check result:", data_, type(data_))
+    normalized = (data_ or "").strip().strip('"').lower()
     await state.update_data(phone=phone)
-    if data_ == "true":
+    if normalized == "true":
         await message.answer("️️🔐 Iltimos, parolingizni kiriting. U kamida 8 ta belgidan iborat bo‘lishi lozim.", reply_markup=ReplyKeyboardRemove())
         await Registration.login.set()
-    elif data_ == "false":
+    elif normalized == "false":
         await message.answer(
             "📝 <b>Ro‘yxatdan o‘tish</b>\n\n"
             "Iltimos, ro‘yxatdan o‘tish uchun kerakli ma’lumotlarni kiriting.\n"
@@ -198,6 +204,9 @@ async def phone_number(message: types.Message, state: FSMContext):
         await Registration.password.set()
         user_id = message.from_user.id
         await save_user_state(user_id=user_id, state="ro'yhatga o'tishga yuborildi", username=message.from_user.username, saved_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    else:
+        ic("auth_check unexpected response:", repr(data_))
+        await message.answer("⚠️ Serverdan kutilmagan javob qaytdi. Iltimos, qaytadan urinib ko'ring yoki /start ni bosing.")
 
 
 

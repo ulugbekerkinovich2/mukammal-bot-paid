@@ -21,7 +21,7 @@ from keyboards.default import adminMenuKeyBoardButton
 from loader import dp, bot
 import asyncio
 from keyboards.default.adminMenuKeyBoardButton import adminMenu
-from data.config import ADMINS
+from data.config import ADMINS, TEST_MODE, TEST_CHAT_ID
 
 @dp.message_handler(Text(equals='📊 Admin Panel'), state='*')
 async def admin_command(message: types.Message, state: FSMContext):
@@ -81,7 +81,27 @@ async def send_post_to_users(callback_query: types.CallbackQuery, state: FSMCont
     post_id = data["post_data"]["post_id"]
 
     all_users = send_req.get_all_users()  # foydalanuvchi ro'yxati [{chat_id:...}, ...]
+
+    # ⚠️ LOCAL TEST MODE — .env da TEST_MODE=False qilib prodga chiqar
+    if TEST_MODE and TEST_CHAT_ID:
+        all_users = [u for u in all_users if int(u['chat_id']) == TEST_CHAT_ID]
+
+    total = len(all_users)
     count, failed = 0, 0
+    start_ts = datetime.datetime.now()
+
+    progress_msg = await callback_query.message.edit_text(
+        f"📢 <b>Yuborish boshlandi...</b>\n\n"
+        f"👥 Jami: <b>{total:,}</b>\n"
+        f"✅ Yuborilgan: <b>0</b>\n"
+        f"❌ Xato: <b>0</b>\n"
+        f"⏳ Progress: 0%",
+        parse_mode="HTML"
+    )
+
+    last_edit = datetime.datetime.now()
+    EDIT_EVERY_N = 25
+    EDIT_EVERY_SEC = 2.5
 
     for idx, user in enumerate(all_users, start=1):
         try:
@@ -91,25 +111,52 @@ async def send_post_to_users(callback_query: types.CallbackQuery, state: FSMCont
                 message_id=post_id
             )
             count += 1
-            # updated = send_req.update_user(user['id'], user['chat_id'],user['firstname'], user['lastname'],user['bot_id'],user['username'],"active",user['created_at'])
             send_req.update_user_status(user['chat_id'], user['bot_id'], "active")
             ic(f"User {user['chat_id']} ga yuborildi")
         except Exception as e:
             failed += 1
             ic(user)
             send_req.update_user_status(user['chat_id'], user['bot_id'], "blocked")
-            # updated = send_req.update_user(user['id'], user['chat_id'],user['firstname'], user['lastname'],user['bot_id'],user['username'],"blocked",user['created_at'])
             print(f"User {user['chat_id']} ga yuborilmadi: {e}")
-        # har 100 tadan keyin 1 sekund kutish
+
+        now = datetime.datetime.now()
+        time_since_edit = (now - last_edit).total_seconds()
+        if idx == total or (idx % EDIT_EVERY_N == 0 and time_since_edit >= EDIT_EVERY_SEC):
+            elapsed = (now - start_ts).total_seconds()
+            rate = idx / elapsed if elapsed > 0 else 0
+            remaining = (total - idx) / rate if rate > 0 else 0
+            percent = (idx / total * 100) if total else 100
+            try:
+                await progress_msg.edit_text(
+                    f"📢 <b>Yuborilmoqda...</b>\n\n"
+                    f"👥 Jami: <b>{total:,}</b>\n"
+                    f"✅ Yuborilgan: <b>{count:,}</b>\n"
+                    f"❌ Xato: <b>{failed:,}</b>\n"
+                    f"📈 Ishlangan: <b>{idx:,}/{total:,}</b> ({percent:.1f}%)\n"
+                    f"⚡ Tezlik: <b>{rate:.1f}</b> msg/s\n"
+                    f"⏱ O'tgan vaqt: <b>{int(elapsed)}s</b>\n"
+                    f"⏳ Qolgan (taxminiy): <b>{int(remaining)}s</b>",
+                    parse_mode="HTML"
+                )
+                last_edit = now
+            except Exception as e:
+                ic(f"progress edit fail: {e}")
+
         if idx % 100 == 0:
             await asyncio.sleep(1)
 
-    await callback_query.message.edit_text(
-        f"📢 Post foydalanuvchilarga yuborish tugadi ✅\n\n"
-        f"✅ Yuborilganlar: {count}\n"
-        f"❌ Yuborilmaganlar: {failed}\n"
-        f"👥 Jami: {len(all_users)}"
-    )
+    elapsed_total = (datetime.datetime.now() - start_ts).total_seconds()
+    try:
+        await progress_msg.edit_text(
+            f"📢 <b>Post yuborish tugadi</b> ✅\n\n"
+            f"👥 Jami: <b>{total:,}</b>\n"
+            f"✅ Yuborilganlar: <b>{count:,}</b>\n"
+            f"❌ Yuborilmaganlar: <b>{failed:,}</b>\n"
+            f"⏱ Umumiy vaqt: <b>{int(elapsed_total)}s</b>",
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        ic(f"final edit fail: {e}")
     await state.finish()
 
 

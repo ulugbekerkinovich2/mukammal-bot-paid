@@ -11,10 +11,16 @@ async def auth_check(phone):
     headers = {
         "Content-Type": "application/json"
     }
-
-    async with aiohttp.ClientSession() as session:
-        async with session.post(url, json=payload, headers=headers) as response:
-            return await response.text()
+    ic("auth_check REQUEST:", url, payload)
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=payload, headers=headers) as response:
+                text = await response.text()
+                ic("auth_check RESPONSE:", response.status, dict(response.headers), text)
+                return text
+    except Exception as e:
+        ic("auth_check NETWORK ERROR:", type(e).__name__, str(e))
+        raise
 
 
 import aiohttp
@@ -435,7 +441,7 @@ def update_user_status(chat_id, bot_id, status="blocked"):
         port=os.getenv("db_port")
     )
     try:
-        with conn:
+         with conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """

@@ -10,3 +10,5 @@ ADMINS = env.list("ADMINS")  # adminlar ro'yxati
 IP = env.str("ip")  # Xosting ip manzili
 main_url = env.str("base_url")
 CHANNEL_ID = env.str('CHANNEL_ID')
+TEST_MODE = env.bool("TEST_MODE", False)
+TEST_CHAT_ID = env.int("TEST_CHAT_ID", 0)
