@@ -80,7 +80,19 @@ async def send_post_to_users(callback_query: types.CallbackQuery, state: FSMCont
     channel = data["post_data"]["channel"]
     post_id = data["post_data"]["post_id"]
 
-    all_users = send_req.get_all_users()  # foydalanuvchi ro'yxati [{chat_id:...}, ...]
+    # sync requests — executor da bajariladi, event loop ni bloklamasin
+    loop = asyncio.get_event_loop()
+    all_users = await loop.run_in_executor(None, send_req.get_all_users)
+
+    if not all_users:
+        await callback_query.message.edit_text(
+            "⚠️ <b>Foydalanuvchilar ro'yxatini olib bo'lmadi.</b>\n\n"
+            "Ads service (<code>ads.misterdev.uz</code>) ulanmadi yoki bo'sh javob qaytardi.\n"
+            "Iltimos, keyinroq qayta urinib ko'ring.",
+            parse_mode="HTML"
+        )
+        await state.finish()
+        return
 
     # ⚠️ LOCAL TEST MODE — .env da TEST_MODE=False qilib prodga chiqar
     if TEST_MODE and TEST_CHAT_ID:

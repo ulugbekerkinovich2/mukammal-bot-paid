@@ -366,13 +366,21 @@ async def reset_password(id, password, phone):
 
 def get_all_bots():
     url = "https://ads.misterdev.uz/bots/get"
-    response = requests.get(url)
-    return response.json()
+    try:
+        response = requests.get(url, timeout=10)
+        return response.json()
+    except Exception as e:
+        ic("get_all_bots FAILED:", type(e).__name__, str(e))
+        return []
 
 def get_all_users():
     url = "https://ads.misterdev.uz/users/get"
-    response = requests.get(url)
-    data = [i for i in response.json() if i['bot_id'] == 7 or i['bot_id'] == "7"]
+    try:
+        response = requests.get(url, timeout=10)
+        data = [i for i in response.json() if i['bot_id'] == 7 or i['bot_id'] == "7"]
+    except Exception as e:
+        ic("get_all_users FAILED:", type(e).__name__, str(e))
+        return []
     # response = [
     # {
     #     "id": 30927,
@@ -410,8 +418,12 @@ def update_user(id, chat_id,firstname, lastname,bot_id,username,status,created_a
         'created_at': created_at
         }
     ic("update",data)
-    response = requests.put(url, json=data)
-    return response.json()
+    try:
+        response = requests.put(url, json=data, timeout=5)
+        return response.json()
+    except Exception as e:
+        ic("update_user FAILED:", type(e).__name__, str(e))
+        return None
 
 def save_chat_id(chat_id,firstname, lastname,bot_id,username,status):
     url = "https://ads.misterdev.uz/users/post"
