@@ -41,7 +41,7 @@ from utils.send_req import (
     REGISTER_RETRY_ATTEMPTS,
 )
 from data.config import ADMIN_CHAT_ID, CHANNEL_USERNAME, CHANNEL_LINK
-from data.config import BASE_URL, SECRET_KEY
+from data.config import BASE_URL, SECRET_KEY, V2_FOR_ALL, V2_API_BASE
 
 import asyncio
 from collections import defaultdict
@@ -242,6 +242,13 @@ def normalize_fio_to_surname_name(raw: str) -> Optional[str]:
 API_V1 = (BASE_URL or "").rstrip("/")
 if not API_V1.endswith("/api/v1"):
     API_V1 = API_V1 + "/api/v1"
+
+# v2 endpoint'lari uchun base. V2_API_BASE berilsa o'sha, aks holda API_V1.
+V2_API_V1 = (V2_API_BASE or "").rstrip("/")
+if V2_API_V1 and not V2_API_V1.endswith("/api/v1"):
+    V2_API_V1 = V2_API_V1 + "/api/v1"
+if not V2_API_V1:
+    V2_API_V1 = API_V1
 
 # ✅ Sinf harflari (UI language bo‘yicha)
 UZ_CLASS_LETTERS = [
@@ -2096,7 +2103,7 @@ def v2_webapp_url(user_id: Optional[int] = None) -> str:
 
 
 async def _v2_api_get(path: str) -> Dict[str, Any]:
-    url = f"{API_V1}{path}"
+    url = f"{V2_API_V1}{path}"
     timeout = aiohttp.ClientTimeout(total=15)
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -2115,7 +2122,7 @@ async def _v2_api_get(path: str) -> Dict[str, Any]:
 
 
 async def _v2_api_post(path: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    url = f"{API_V1}{path}"
+    url = f"{V2_API_V1}{path}"
     timeout = aiohttp.ClientTimeout(total=30)
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -2494,9 +2501,9 @@ async def start_cmd(message: types.Message, state: FSMContext):
     await cleanup_bot_messages(message.bot, message.chat.id, state)
     await state.finish()
 
-    # v2 promo deep-link (/start v2): yupqa oqim — track + WebApp tugma.
-    # Kanal obunasi va v1 registratsiya FSM yo'q (forma/ball/natija WebApp ichida).
-    if (message.get_args() or "").strip().lower() == "v2":
+    # v2 (reklama) oqim: V2_FOR_ALL=true bo'lsa hamma uchun, aks holda faqat
+    # /start v2 deep-link'da. Kanal obunasi va v1 registratsiya FSM yo'q.
+    if V2_FOR_ALL or (message.get_args() or "").strip().lower() == "v2":
         await on_start_v2(message, state)
         return
 

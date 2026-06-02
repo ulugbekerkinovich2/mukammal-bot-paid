@@ -20,6 +20,11 @@ WEBAPP_URL = env.str("WEBAPP_URL", "https://dtm.your-domain.uz/online-test/")
 # v2 (reklama) WebApp — fan tanlash + test WebApp ichida. Bo'sh bo'lsa,
 # WEBAPP_URL'ga ?v2=1 qo'shib quriladi (handlers/users/start.py: v2_webapp_url).
 V2_WEBAPP_URL = env.str("V2_WEBAPP_URL", "")
+# true bo'lsa HAR QANDAY /start v2 oqimiga ketadi (deep-link shart emas).
+# false (default) — faqat /start v2 deep-link'da v2, oddiy /start eski v1.
+V2_FOR_ALL = env.bool("V2_FOR_ALL", False)
+# v2 endpoint'lari uchun alohida API host (bo'sh bo'lsa BASE_URL ishlatiladi).
+V2_API_BASE = env.str("V2_API_BASE", "")
 # SUBJECTS_MAP = {
 #     "Matematika": {
 #         "id": 20,
