@@ -24,7 +24,7 @@ from aiogram.types import (
 
 from loader import dp
 from keyboards.default.userKeyboard import keyboard_user
-from states.userStates import Registration
+from states.userStates import Registration, OnlineV2
 from data.config import SUBJECTS_MAP
 from keyboards.inline.user_inline import language_keyboard_button, gender_kb
 
@@ -2079,40 +2079,62 @@ def online_test_url(user_id: Optional[int] = None) -> str:
 # ----------------------------
 # v2 (reklama) — yupqa promo oqim
 # ----------------------------
-# Bot faqat /start v2 deep-link'da userni track qiladi va v2 WebApp tugmasini
-# ochadi. Fan tanlash, forma, ball, natija — hammasi WebApp ichida (backend
-# tayyor: docs/online-test-v2-promo-bot.md).
-V2_PROMO_TEXT = (
+# /start v2 deep-link: userni track qiladi, fan juftligini so'raydi, tanlangach
+# v2 WebApp'ni tanlangan fanlar bilan ochadi. Forma, ball, natija — hammasi
+# WebApp ichida (backend tayyor: docs/online-test-v2-promo-bot.md).
+V2_SUBJECT_PROMPT = (
     "🎯 <b>Bepul DTM sinov testi!</b>\n\n"
-    "Fan tanlab, 90 savollik testni topshiring. "
-    "Natijangizni testdan keyin ko'rasiz.\n\n"
-    "Boshlash uchun tugmani bosing:"
+    "Qaysi fanlar bo'yicha test ishlaysiz? Juftlikni tanlang:"
 )
 
 
-def v2_webapp_url(user_id: Optional[int] = None) -> str:
+def v2_webapp_url(
+    user_id: Optional[int] = None,
+    first_subject_id: Optional[int] = None,
+    second_subject_id: Optional[int] = None,
+) -> str:
     """v2 WebApp URL. V2_WEBAPP_URL berilmagan bo'lsa WEBAPP_URL'ga ?v2=1 qo'shadi.
-    Brauzerda ochilsa chat_id'ni URL'dan o'qiydi (WebApp ichida initData ustun)."""
+    chat_id + tanlangan fanlar query param sifatida qo'shiladi (frontend o'qiydi;
+    WebApp ichida initData ustun)."""
     from data.config import V2_WEBAPP_URL, WEBAPP_URL
     base = (V2_WEBAPP_URL or "").strip()
     if not base:
         b = (WEBAPP_URL or "").strip()
         sep = "&" if ("?" in b) else "?"
         base = f"{b}{sep}v2=1"
+
+    extra = []
     if user_id:
+        extra.append(f"chat_id={int(user_id)}")
+    if first_subject_id:
+        extra.append(f"first_subject_id={int(first_subject_id)}")
+    if second_subject_id:
+        extra.append(f"second_subject_id={int(second_subject_id)}")
+    for p in extra:
         sep = "&" if ("?" in base) else "?"
-        base = f"{base}{sep}chat_id={int(user_id)}"
+        base = f"{base}{sep}{p}"
     return base
 
 
-def v2_promo_kb(user_id: Optional[int] = None) -> types.InlineKeyboardMarkup:
+def v2_pairs_kb(ui_lang: str = "uz") -> types.InlineKeyboardMarkup:
+    """v2 fan juftligi tugmalari (SUBJECTS_MAP relative bo'yicha). v1 pairs_kb bilan
+    bir xil mantiq, lekin callback prefiksi `v2pair:` — v1 handler bilan to'qnashmaydi."""
     kb = types.InlineKeyboardMarkup(row_width=1)
-    kb.add(
-        types.InlineKeyboardButton(
-            text="📝 Testni boshlash",
-            web_app=types.WebAppInfo(url=v2_webapp_url(user_id)),
-        ),
-    )
+    for first_uz, info in SUBJECTS_MAP.items():
+        first_label = first_uz if ui_lang == "uz" else info.get("ru", first_uz)
+        first_id = info["id"]
+        rel_uz = info.get("relative", {}).get("uz", [])
+        rel_ru = info.get("relative", {}).get("ru", [])
+        for i, second_uz in enumerate(rel_uz):
+            second_label = rel_ru[i] if (ui_lang == "ru" and i < len(rel_ru)) else second_uz
+            second_info = SUBJECTS_MAP.get(second_uz)
+            if not second_info:
+                continue
+            second_id = second_info["id"]
+            kb.add(types.InlineKeyboardButton(
+                f"{first_label} — {second_label}",
+                callback_data=f"v2pair:{first_id}|{second_id}",
+            ))
     return kb
 
 
@@ -2132,16 +2154,50 @@ async def _track_start_v2(tg_user) -> None:
         logger.warning(f"[v2 track] failed (ignored) user_id={tg_user.id}: {repr(e)}")
 
 
-async def on_start_v2(message: types.Message) -> None:
+async def on_start_v2(message: types.Message, state: FSMContext) -> None:
     # 1) start bosgan userni saqlaymiz (forma to'lmasa ham yo'qolmaydi)
     await _track_start_v2(message.from_user)
-    # 2) v2 WebApp tugmasi — fan tanlash + test WebApp ichida
+    # 2) fan juftligini so'raymiz — tanlangach WebApp ochiladi
     await message.answer(
-        V2_PROMO_TEXT,
+        V2_SUBJECT_PROMPT,
         parse_mode="HTML",
-        reply_markup=v2_promo_kb(message.from_user.id),
+        reply_markup=v2_pairs_kb("uz"),
         disable_web_page_preview=True,
     )
+    await OnlineV2.pick_subjects.set()
+
+
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith("v2pair:"), state="*")
+async def v2_pick_pair(call: types.CallbackQuery, state: FSMContext):
+    await call.answer()
+    try:
+        first_s, second_s = call.data.split(":", 1)[1].split("|")
+        first_id, second_id = int(first_s), int(second_s)
+    except Exception:
+        await call.answer(tr("uz", "pair_not_found"), show_alert=True)
+        return
+
+    first_name, _ = find_subject_by_id(first_id)
+    second_name, _ = find_subject_by_id(second_id)
+    if not first_name or not second_name:
+        await call.answer(tr("uz", "pair_not_found"), show_alert=True)
+        return
+
+    url = v2_webapp_url(call.from_user.id, first_id, second_id)
+    kb = types.InlineKeyboardMarkup(row_width=1)
+    kb.add(types.InlineKeyboardButton(
+        text="📝 Testni boshlash",
+        web_app=types.WebAppInfo(url=url),
+    ))
+    text = (
+        f"✅ Tanlangan fanlar: <b>{first_name} — {second_name}</b>\n\n"
+        "Testni boshlash uchun tugmani bosing:"
+    )
+    try:
+        await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+    except Exception:
+        await call.message.answer(text, parse_mode="HTML", reply_markup=kb)
+    await state.finish()
 
 
 def test_type_kb(ui_lang: str = "uz", user_id: Optional[int] = None) -> types.InlineKeyboardMarkup:
@@ -2278,7 +2334,7 @@ async def start_cmd(message: types.Message, state: FSMContext):
     # v2 promo deep-link (/start v2): yupqa oqim — track + WebApp tugma.
     # Kanal obunasi va v1 registratsiya FSM yo'q (forma/ball/natija WebApp ichida).
     if (message.get_args() or "").strip().lower() == "v2":
-        await on_start_v2(message)
+        await on_start_v2(message, state)
         return
 
     # Queue workerlarni ishga tushiramiz (1 marta)

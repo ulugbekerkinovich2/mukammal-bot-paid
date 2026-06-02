@@ -16,7 +16,12 @@ class Registration(StatesGroup):
 
     class_letter = State()
     
-    exam_lang = State()         
-    second_subject = State()     
-    verify = State()             
+    exam_lang = State()
+    second_subject = State()
+    verify = State()
     gender = State()
+
+
+class OnlineV2(StatesGroup):
+    # v2 (reklama) yupqa oqim: faqat fan juftligini tanlash, qolgani WebApp ichida.
+    pick_subjects = State()
