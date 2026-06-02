@@ -2076,6 +2076,74 @@ def online_test_url(user_id: Optional[int] = None) -> str:
     return f"{base}{sep}chat_id={int(user_id)}"
 
 
+# ----------------------------
+# v2 (reklama) — yupqa promo oqim
+# ----------------------------
+# Bot faqat /start v2 deep-link'da userni track qiladi va v2 WebApp tugmasini
+# ochadi. Fan tanlash, forma, ball, natija — hammasi WebApp ichida (backend
+# tayyor: docs/online-test-v2-promo-bot.md).
+V2_PROMO_TEXT = (
+    "🎯 <b>Bepul DTM sinov testi!</b>\n\n"
+    "Fan tanlab, 90 savollik testni topshiring. "
+    "Natijangizni testdan keyin ko'rasiz.\n\n"
+    "Boshlash uchun tugmani bosing:"
+)
+
+
+def v2_webapp_url(user_id: Optional[int] = None) -> str:
+    """v2 WebApp URL. V2_WEBAPP_URL berilmagan bo'lsa WEBAPP_URL'ga ?v2=1 qo'shadi.
+    Brauzerda ochilsa chat_id'ni URL'dan o'qiydi (WebApp ichida initData ustun)."""
+    from data.config import V2_WEBAPP_URL, WEBAPP_URL
+    base = (V2_WEBAPP_URL or "").strip()
+    if not base:
+        b = (WEBAPP_URL or "").strip()
+        sep = "&" if ("?" in b) else "?"
+        base = f"{b}{sep}v2=1"
+    if user_id:
+        sep = "&" if ("?" in base) else "?"
+        base = f"{base}{sep}chat_id={int(user_id)}"
+    return base
+
+
+def v2_promo_kb(user_id: Optional[int] = None) -> types.InlineKeyboardMarkup:
+    kb = types.InlineKeyboardMarkup(row_width=1)
+    kb.add(
+        types.InlineKeyboardButton(
+            text="📝 Testni boshlash",
+            web_app=types.WebAppInfo(url=v2_webapp_url(user_id)),
+        ),
+    )
+    return kb
+
+
+async def _track_start_v2(tg_user) -> None:
+    """v2: /start bosgan userni bazaga yozish — idempotent, best-effort.
+    X-Api-Key talab qilinmaydi (ochiq endpoint). Xato test oqimini bloklamasin."""
+    url = f"{API_V1}/auth/register/start"
+    payload: Dict[str, Any] = {"bot_id": str(tg_user.id)}
+    if tg_user.username:
+        payload["username"] = tg_user.username  # @ siz; bo'sh bo'lsa yuborilmaydi
+    try:
+        timeout = aiohttp.ClientTimeout(total=10)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(url, json=payload) as r:
+                logger.info(f"[v2 track] register/start -> {r.status} user_id={tg_user.id}")
+    except Exception as e:
+        logger.warning(f"[v2 track] failed (ignored) user_id={tg_user.id}: {repr(e)}")
+
+
+async def on_start_v2(message: types.Message) -> None:
+    # 1) start bosgan userni saqlaymiz (forma to'lmasa ham yo'qolmaydi)
+    await _track_start_v2(message.from_user)
+    # 2) v2 WebApp tugmasi — fan tanlash + test WebApp ichida
+    await message.answer(
+        V2_PROMO_TEXT,
+        parse_mode="HTML",
+        reply_markup=v2_promo_kb(message.from_user.id),
+        disable_web_page_preview=True,
+    )
+
+
 def test_type_kb(ui_lang: str = "uz", user_id: Optional[int] = None) -> types.InlineKeyboardMarkup:
     kb = types.InlineKeyboardMarkup(row_width=1)
     kb.add(
@@ -2206,6 +2274,12 @@ async def start_cmd(message: types.Message, state: FSMContext):
     # Avval oldingi flow ning bot xabarlarini o'chiramiz, keyin state ni reset qilamiz
     await cleanup_bot_messages(message.bot, message.chat.id, state)
     await state.finish()
+
+    # v2 promo deep-link (/start v2): yupqa oqim — track + WebApp tugma.
+    # Kanal obunasi va v1 registratsiya FSM yo'q (forma/ball/natija WebApp ichida).
+    if (message.get_args() or "").strip().lower() == "v2":
+        await on_start_v2(message)
+        return
 
     # Queue workerlarni ishga tushiramiz (1 marta)
     await ensure_register_workers(message.bot, workers=2)
