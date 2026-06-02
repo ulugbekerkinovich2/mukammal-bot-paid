@@ -1,262 +1,326 @@
 # Online test **v2** (reklama) — Telegram bot integratsiya
 
-> v2 = reklama uchun **kechiktirilgan registratsiya**. Foydalanuvchi `/start`
-> bosadi → WebApp ochiladi → **faqat fan tanlaydi va testni boshlaydi**. Test
-> tugab, natijani ko'rmoqchi bo'lganda qolgan forma (kanaldan tashqari) WebApp
-> ichida so'raladi.
+> v2 = reklama uchun **kechiktirilgan registratsiya**. **Bot** fanlarni so'raydi
+> va backendga yuboradi → test **WebApp**'da ishlanadi → test tugagach **bot**
+> qolgan formani so'raydi (kanaldan tashqari) → natija + PDF chatga keladi.
 
-**Bog'liq commit:** `534c1c4` (backend tayyor, remote'da).
-**Frontend doc:** [online-test-v2-promo-frontend.md](online-test-v2-promo-frontend.md) — WebApp tomoni.
+**Bog'liq commit:** `<shu commit>`. Endpointlar `/api/v1` prefiksli.
+**Frontend (WebApp) doc:** [online-test-v2-promo-frontend.md](online-test-v2-promo-frontend.md).
 
 ---
 
 ## 1. Mas'uliyat taqsimoti
 
-| Qadam | Kim bajaradi |
-|-------|--------------|
-| `/start` → userni saqlash (tracking) | **Bot** → `POST /auth/register/start` |
-| v2 WebApp tugmasini yuborish | **Bot** → `WebAppInfo(url=...)` |
-| Fan tanlash | **WebApp** |
-| `POST /dtm/online/v2/start` (user + daftar yaratish, JWT) | **WebApp** |
-| Test (`/test`, `/answer`, `/submit`) | **WebApp** |
-| Qolgan forma + `POST /dtm/online/v2/complete` | **WebApp** |
-| Natija + PDF ko'rsatish | **WebApp** (`/status`) |
-| GraphBot chat_id import (reklamadan oldin) | **Adminka** → `POST /admin/import-bot-start-users` |
-
-> **Bot yupqa:** asosiy ish WebApp'da. Bot faqat `/start` saqlaydi va WebApp'ni
-> ochadi. Fan tanlash, forma, ball — hammasi WebApp ichida.
+| Qadam | Kim | Endpoint |
+|-------|-----|----------|
+| `/start` → userni saqlash (tracking) | **Bot** | `POST /auth/register/start` |
+| Fan ro'yxatini olish (tugmalar uchun) | **Bot** | `GET /dtm/online/subjects` |
+| Fan tanlash (inline tugmalar) | **Bot** | — |
+| Tanlangan fanlarni yuborish → user + daftar yaratish | **Bot** | `POST /dtm/online/v2/start` |
+| Test WebApp tugmasini ochish | **Bot** | — |
+| WebApp'ga kirish (chat_id) | **WebApp** | `POST /dtm/online/quick-login` |
+| Test (savollar, javob, topshirish) | **WebApp** | `/test`, `/answer`, `/submit` |
+| Test tugadi → botga signal | **WebApp** | `tg.sendData(...)` |
+| Qolgan forma (F.I.Sh, tel, maktab, …) | **Bot** | — |
+| Formani yuborish → natija ochiladi | **Bot** | `POST /dtm/online/v2/complete` |
+| Natija balli | **Bot** | (v2/complete javobida) |
+| PDF chatga yuborish | **avtomatik** | backend worker (bot hech narsa qilmaydi) |
 
 ---
 
-## 2. Bot nima qiladi
+## 2. To'liq oqim
 
-### 2.1 — `/start` bosilganda userni saqlash
+```
+/start
+  ├─ POST /auth/register/start            (tracking, idempotent)
+  └─ "Fanlaringizni tanlang"  ← GET /dtm/online/subjects dan inline tugmalar
+        ↓ (1-fan tanlandi)
+     "Ikkinchi fan"
+        ↓ (2-fan tanlandi)
+     POST /dtm/online/v2/start {bot_id, first_subject_id, second_subject_id, username}
+        → user(test_type=online_v2) + 90-savol daftari yaratiladi
+        ↓
+     [📝 Testni boshlash]  WebApp tugmasi
+─────────────────────────────────────────────  WebApp (test UI)
+     quick-login(chat_id) → GET /test → /answer → /submit
+        → { registration_required: true, total_ball: 0 }   ⚠️ ball yashirin
+     tg.sendData('{"done":true}')   → botga qaytaradi
+─────────────────────────────────────────────  Bot (forma)
+  web_app_data keldi
+     → "Natijangizni ko'rish uchun ma'lumot to'ldiring"
+     → F.I.Sh → telefon → maktab kodi → (region, district, …)   [KANAL YO'Q]
+     → POST /dtm/online/v2/complete {bot_id, full_name, phone, school_code, ...}
+        → { total_ball, mandatory_ball, ... }  → botda ko'rsatiladi
+        → PDF render + avtomatik chatga yuboriladi (worker)
+```
 
-Foydalanuvchi botga `/start` bosishi bilan, formani to'ldirmasa ham, uni bazaga
-yozib qo'yamiz. Keyin qaytib kelib davom etsa — yo'qolmaydi.
+---
 
+## 3. Endpointlar (bot chaqiradigan)
+
+### 3.1 `/start` tracking
 ```
 POST /api/v1/auth/register/start
-Content-Type: application/json
 { "bot_id": "6796103305", "username": "ali_valiyev" }
 ```
-- `bot_id` = Telegram `chat_id` (string).
-- `username` = Telegram `@username` (`@` siz; yo'q bo'lsa yuborma).
-- **Idempotent** — qayta `/start` bosilsa xato yo'q, mavjud yozuv qaytadi.
-  Bo'sh `username` eski saqlanganini o'chirmaydi.
+Idempotent, `X-Api-Key` shart emas. `username` yo'q bo'lsa yubormang.
 
-**Response 200:** `{ bot_id, username, created_at, converted }`
-
-> `X-Api-Key` shart emas — bu ochiq endpoint (faqat stub saqlaydi).
-
-### 2.2 — v2 WebApp tugmasini ochish
-
-`/start` (yoki reklama tugmasi) → v2 WebApp'ni Mini App sifatida ochadi. WebApp
-ichida fan tanlash + test boshlanadi.
-
-**v2 WebApp URL** (frontend bilan kelishilgan, alohida sahifa yoki `?v2=1`):
+### 3.2 Fan ro'yxati (tugmalar uchun)
 ```
-https://dtm.your-domain.uz/online-test/?v2=1
+GET /api/v1/dtm/online/subjects
+→ [ { "mt_id": 35, "name_uz": "Matematika", "name_ru": "..." },
+    { "mt_id": 23, "name_uz": "Ingliz tili", ... }, ... ]
 ```
+`mt_id` — `v2/start`ga yuboriladigan qiymat.
+
+### 3.3 Fanlarni yuborish → test tayyorlash
+```
+POST /api/v1/dtm/online/v2/start
+{ "bot_id": "6796103305", "first_subject_id": 35,
+  "second_subject_id": 23, "username": "ali_valiyev" }
+→ { access_token, user_id, user_test_id, resumed }
+```
+- Idempotent: qayta yuborilsa `resumed: true` (o'sha test).
+- `access_token`'ni e'tiborsiz qoldirsa bo'ladi — WebApp o'zi quick-login qiladi.
+- 400 `Unknown subject_id` → noto'g'ri `mt_id`.
+
+### 3.4 Forma → natijani ochish
+```
+POST /api/v1/dtm/online/v2/complete
+{ "bot_id": "6796103305", "full_name": "Valiyev Ali",
+  "phone": "+998901234567", "school_code": "SHAY186",
+  "region": "...", "district": "...", "gender": "male",
+  "group_name": "B", "language": "uz" }
+→ { user_id, document_code, submitted, pdf_pending,
+    total_ball, mandatory_ball, primary_ball, secondary_ball }
+```
+- Majburiy: `bot_id`, `full_name`, `phone`, `school_code`. **Kanal YO'Q.**
+- `submitted: true` → ball ochildi (ko'rsating), PDF render boshlandi → chatga
+  avtomatik keladi.
+- 404 `v2 test user not found` → `v2/start` chaqirilmagan.
+- 400 `School not found` → `school_code` noto'g'ri.
 
 ---
 
-## 3. Aiogram 3.x — to'liq namuna
+## 4. Aiogram 3.x — to'liq namuna
 
 ```python
-from aiogram import Bot, Dispatcher
+from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
-    Message,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
-    WebAppInfo,
+    Message, CallbackQuery,
+    InlineKeyboardMarkup, InlineKeyboardButton,
+    ReplyKeyboardMarkup, KeyboardButton, WebAppInfo,
 )
-import httpx
+import httpx, json
 
-API_BASE = "https://dtm.your-domain.uz"
-V2_WEBAPP_URL = f"{API_BASE}/online-test/?v2=1"   # frontend bilan kelishilgan
+API = "https://dtm.your-domain.uz/api/v1"
+WEBAPP_URL = "https://dtm.your-domain.uz/online-test/"
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 
-async def _track_start(tg_user) -> None:
-    """/start bosgan userni bazaga yozish (idempotent, best-effort)."""
-    try:
-        async with httpx.AsyncClient(timeout=10) as cli:
-            await cli.post(
-                f"{API_BASE}/api/v1/auth/register/start",
-                json={
-                    "bot_id": str(tg_user.id),
-                    "username": tg_user.username or None,
-                },
-            )
-    except Exception:
-        pass  # tracking test oqimini bloklamasin
+class V2(StatesGroup):
+    first_subject = State()
+    second_subject = State()
+    full_name = State()
+    phone = State()
+    school_code = State()
 
 
+async def _api_post(path, payload):
+    async with httpx.AsyncClient(timeout=30) as c:
+        return await c.post(f"{API}{path}", json=payload)
+
+async def _api_get(path):
+    async with httpx.AsyncClient(timeout=15) as c:
+        return await c.get(f"{API}{path}")
+
+
+# --- /start: tracking + fan tanlash ---
 @dp.message(CommandStart())
-async def on_start(message: Message):
-    # 1) start bosgan userni saqlaymiz (forma to'lmasa ham)
-    await _track_start(message.from_user)
-
-    # 2) v2 WebApp tugmasini ochamiz — fan tanlash + test WebApp ichida
-    kb = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(
-            text="📝 Testni boshlash",
-            web_app=WebAppInfo(url=V2_WEBAPP_URL),
-        )
-    ]])
-    await message.answer(
-        "Bepul DTM sinov testi!\n\n"
-        "Fan tanlab, 90 savollik testni topshiring. "
-        "Natijangizni testdan keyin ko'rasiz.\n\n"
-        "Boshlash uchun tugmani bosing:",
-        reply_markup=kb,
-    )
-```
-
-### pyTelegramBotAPI (telebot)
-
-```python
-import telebot, requests
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
-
-API_BASE = "https://dtm.your-domain.uz"
-V2_WEBAPP_URL = f"{API_BASE}/online-test/?v2=1"
-bot = telebot.TeleBot(BOT_TOKEN)
-
-@bot.message_handler(commands=["start"])
-def on_start(msg):
+async def on_start(message: Message, state: FSMContext):
     # tracking (best-effort)
     try:
-        requests.post(
-            f"{API_BASE}/api/v1/auth/register/start",
-            json={"bot_id": str(msg.chat.id),
-                  "username": msg.from_user.username or None},
-            timeout=10,
-        )
+        await _api_post("/auth/register/start", {
+            "bot_id": str(message.from_user.id),
+            "username": message.from_user.username or None,
+        })
     except Exception:
         pass
 
-    kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton(
-        "📝 Testni boshlash",
-        web_app=WebAppInfo(url=V2_WEBAPP_URL),
-    ))
-    bot.send_message(msg.chat.id, "Bepul DTM sinov testi! Boshlash:", reply_markup=kb)
+    subs = (await _api_get("/dtm/online/subjects")).json()
+    rows = [[InlineKeyboardButton(text=s["name_uz"], callback_data=f"s1:{s['mt_id']}")]
+            for s in subs]
+    await state.set_state(V2.first_subject)
+    await message.answer(
+        "Bepul DTM sinov testi!\n\nBirinchi (majburiy) faningizni tanlang:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+    )
+
+
+@dp.callback_query(V2.first_subject, F.data.startswith("s1:"))
+async def pick_first(cb: CallbackQuery, state: FSMContext):
+    await state.update_data(first_subject_id=int(cb.data.split(":")[1]))
+    subs = (await _api_get("/dtm/online/subjects")).json()
+    rows = [[InlineKeyboardButton(text=s["name_uz"], callback_data=f"s2:{s['mt_id']}")]
+            for s in subs]
+    await state.set_state(V2.second_subject)
+    await cb.message.edit_text("Ikkinchi (tanlov) faningizni tanlang:",
+                               reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+    await cb.answer()
+
+
+@dp.callback_query(V2.second_subject, F.data.startswith("s2:"))
+async def pick_second(cb: CallbackQuery, state: FSMContext):
+    data = await state.update_data(second_subject_id=int(cb.data.split(":")[1]))
+    # test + daftar yaratish
+    r = await _api_post("/dtm/online/v2/start", {
+        "bot_id": str(cb.from_user.id),
+        "first_subject_id": data["first_subject_id"],
+        "second_subject_id": data["second_subject_id"],
+        "username": cb.from_user.username or None,
+    })
+    if r.status_code != 200:
+        await cb.message.answer(f"Xatolik: {r.status_code}\n{r.text[:200]}")
+        await cb.answer(); return
+
+    # WebApp tugmasi — sendData ishlashi uchun REPLY keyboard (inline emas)
+    kb = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="📝 Testni boshlash",
+                                  web_app=WebAppInfo(url=WEBAPP_URL))]],
+        resize_keyboard=True,
+    )
+    await state.set_state(None)  # test davomida FSM bo'sh
+    await cb.message.answer("Tayyor! Pastdagi tugma orqali testni boshlang:",
+                            reply_markup=kb)
+    await cb.answer()
+
+
+# --- WebApp test tugagach botga sendData orqali qaytaradi ---
+@dp.message(F.web_app_data)
+async def on_test_done(message: Message, state: FSMContext):
+    # WebApp tg.sendData('{"done":true}') yuboradi
+    await state.set_state(V2.full_name)
+    await message.answer("✅ Test topshirildi!\n\n"
+                         "Natijangizni ko'rish uchun: F.I.Sh kiriting:")
+
+
+@dp.message(V2.full_name)
+async def get_name(message: Message, state: FSMContext):
+    await state.update_data(full_name=message.text.strip())
+    await state.set_state(V2.phone)
+    await message.answer("Telefon raqamingiz:")
+
+
+@dp.message(V2.phone)
+async def get_phone(message: Message, state: FSMContext):
+    await state.update_data(phone=message.text.strip())
+    await state.set_state(V2.school_code)
+    await message.answer("Maktab kodingiz:")
+
+
+@dp.message(V2.school_code)
+async def get_school_and_finish(message: Message, state: FSMContext):
+    data = await state.update_data(school_code=message.text.strip())
+    r = await _api_post("/dtm/online/v2/complete", {
+        "bot_id": str(message.from_user.id),
+        "full_name": data["full_name"],
+        "phone": data["phone"],
+        "school_code": data["school_code"],
+        # ixtiyoriy: region, district, gender, group_name, language
+    })
+    await state.clear()
+    if r.status_code != 200:
+        await message.answer(f"Xatolik: {r.status_code}\n{r.text[:200]}")
+        return
+    res = r.json()
+    await message.answer(
+        f"🎉 Natijangiz:\n\n"
+        f"Umumiy ball: <b>{res['total_ball']}</b>\n"
+        f"Majburiy: {res['mandatory_ball']}\n"
+        f"1-fan: {res['primary_ball']}\n"
+        f"2-fan: {res['secondary_ball']}\n\n"
+        f"To'liq natija (PDF) bir zumda yuboriladi…",
+        parse_mode="HTML",
+    )
+    # PDF backend worker tomonidan avtomatik chatga keladi — qo'shimcha kod kerakmas
 ```
+
+> **WebApp tomon (frontend):** test `/submit`'dan keyin `registration_required: true`
+> bo'lsa, ballni KO'RSATMASIN va `tg.sendData(JSON.stringify({done:true}))`
+> chaqirib WebApp'ni yopsin. Shunda bot formani boshlaydi. Batafsil: frontend doc.
 
 ---
 
-## 4. WebApp v2 oqimi (bot fonida nima bo'ladi)
+## 5. PDF yetkazish — avtomatik
 
-Bot WebApp'ni ochgach, ichida (frontend bajaradi):
-
-```
-WebApp ochiladi (?v2=1)
-   ↓
-fan tanlash ekrani
-   ↓
-POST /dtm/online/v2/start { bot_id, first_subject_id, second_subject_id, username }
-   → JWT + user + 90-savol daftari yaratiladi
-   ↓
-GET /dtm/online/test → test
-   ↓
-POST /dtm/online/submit → { registration_required: true, total_ball: 0 }   ⚠️ ball yashirin
-   ↓
-qolgan forma (F.I.Sh, telefon, maktab, ... — KANAL YO'Q)
-   ↓
-POST /dtm/online/v2/complete → ball ochiladi + PDF render
-   ↓
-GET /dtm/online/status → PDF
-```
-
-WebApp `bot_id`'ni Telegram `initData`'dan (yoki `?chat_id=`) oladi — bot
-qo'shimcha uzatish shart emas. Batafsil: frontend doc.
+`v2/complete`'dan keyin backend natija PDF'ini render qiladi va **telegram queue
+worker** orqali user chatiga avtomatik yuboradi (mavjud online flow mexanizmi).
+Bot tomonida qo'shimcha kod **kerak emas**. Worker ishlashi uchun Redis +
+queue worker startup'da ulangan bo'lishi shart (mavjud setup).
 
 ---
 
-## 5. PDF'ni Telegram chatga yuborish (ixtiyoriy)
+## 6. WebApp → bot signali (sendData)
 
-`v2/complete`'dan keyin PDF render bo'ladi va `user.file_url` ga yoziladi. WebApp
-uni `/status` orqali ko'rsatadi. Agar PDF'ni **bot chatiga ham** yubormoqchi
-bo'lsangiz — mavjud online flow'dagi worker mexanizmi ishlatiladi (alohida
-sozlash kerak bo'lsa, frontend/backend bilan kelishing). v2 uchun majburiy emas.
+`tg.sendData()` faqat **reply-keyboard** WebApp tugmasida ishlaydi (inline
+WebApp tugmasida emas) — shu sabab namunada `ReplyKeyboardMarkup`. WebApp test
+tugagach `Telegram.WebApp.sendData('{"done":true}')` chaqiradi → bot
+`F.web_app_data` handler'ida qabul qiladi.
 
----
-
-## 6. Adminka — reklamadan oldin chat_id import
-
-GraphBot listni (start bosgan, hali ro'yxatdan o'tmagan userlar) bazaga yuklash.
-Bu **bot emas, adminka** ishi:
-
-```
-POST /api/v1/admin/import-bot-start-users
-X-Api-Key: <SECRET_KEY>
-Content-Type: multipart/form-data
-file: <.json | .csv | .txt>
-```
-Javob: `{ received, inserted, skipped_registered, skipped_existing }`. Batafsil:
-frontend doc, 5-bo'lim.
+**Muqobil** (sendData ishlatmasangiz): WebApp yopilgach botga "✅ Natijani olish"
+inline tugmasini yuboring, bosilganda forma FSM'ini boshlang.
 
 ---
 
-## 7. Test holatlari (manual smoke test)
+## 7. Smoke test
 
 | # | Holat | Kutilgan |
 |---|-------|----------|
-| 1 | `/start` bosildi | `register/start` 200, user `bot_start_users`'da |
-| 2 | `/start` qayta bosildi | Xato yo'q (idempotent), eski username saqlanadi |
-| 3 | WebApp ochilib fan tanlandi | `v2/start` 200, JWT, test yuklanadi |
-| 4 | Qayta `/start` → WebApp | `v2/start` `resumed: true` — o'sha test davom etadi |
-| 5 | Test submit | `registration_required: true`, ball ko'rsatilmaydi |
-| 6 | Forma to'ldirildi | `v2/complete` 200, ball ochiladi, PDF render |
-| 7 | Forma'dan oldin submit yo'q (faqat forma) | `v2/complete` `submitted: false`, ball 0 |
+| 1 | `/start` | tracking 200, fan tugmalari chiqadi |
+| 2 | 2 fan tanlandi | `v2/start` 200, WebApp tugmasi |
+| 3 | Qayta `/start` → 2 fan | `v2/start` `resumed: true` |
+| 4 | WebApp test → submit | `registration_required: true`, ball ko'rinmaydi |
+| 5 | sendData → forma to'ldirildi | `v2/complete` 200, ball xabarda |
+| 6 | — | PDF chatga avtomatik keladi |
 
 ---
 
-## 8. Tez-tez uchraydigan xatolar
+## 8. Tez-tez xatolar
 
-**`v2/start` 400 — `Unknown subject_id`**
-- Sabab: noto'g'ri fan `mt_id`.
-- Yechim: WebApp mavjud register'dagi fan `mt_id` qiymatlarini ishlatsin.
-
-**Submit'dan keyin ball 0 ko'rinyapti**
-- Bu **xato emas** — `registration_required: true`. Ball ataylab yashirilgan.
-  WebApp formaga o'tkazishi, ballni ko'rsatmasligi kerak.
-
-**`v2/complete` 404 — `v2 test user not found`**
-- Sabab: bu `bot_id` uchun v2 test boshlanmagan (`v2/start` chaqirilmagan).
-- Yechim: avval WebApp `v2/start` chaqirsin.
-
-**`v2/complete` 400 — `School not found`**
-- Sabab: `school_code` bazada yo'q.
-- Yechim: to'g'ri maktab kodini yuboring.
-
-**`/start` tracking ishlamayapti**
-- `register/start` `X-Api-Key` talab qilmaydi — header yubormang. `bot_id`
-  string bo'lsin.
+- **`v2/complete` 404** — `v2/start` chaqirilmagan (fan tanlanmagan). Forma'dan
+  oldin `v2/start` bo'lishi shart.
+- **`v2/start` 400 `Unknown subject_id`** — `GET /subjects` dagi `mt_id`'larni
+  ishlating.
+- **Submit'da ball 0** — xato emas, `registration_required: true`. Forma'dan
+  keyin ochiladi.
+- **PDF kelmadi** — Redis/queue worker ishlamayapti (`pm2 logs`'da
+  `[online-bg] enqueued telegram send` bormi tekshiring).
+- **sendData kelmadi** — WebApp **inline** tugmada ochilgan; reply-keyboard
+  tugmasiga o'tkazing yoki muqobil tugma usulini ishlating.
 
 ---
 
 ## 9. Eski (v1) online flow
 
-v1 online test (to'liq registratsiya → quick-login → WebApp) **o'zgarmagan** —
-[online-test-bot-setup.md](online-test-bot-setup.md), 9-bo'lim. v2 butunlay
-alohida (`test_type="online_v2"`), v1 cap'ga ta'sir qilmaydi. Bir user ham v1
-real testni, ham v2 reklama testini topshira oladi.
+v1 (to'liq registratsiya → quick-login → WebApp) **o'zgarmagan**
+([online-test-bot-setup.md](online-test-bot-setup.md) §9). v2 alohida
+(`test_type="online_v2"`), v1 cap'ga ta'sir qilmaydi. Bir user ham v1, ham v2
+testni topshira oladi.
 
 ---
 
-## 10. Xulosa — bot dasturchisi checklist
+## 10. Checklist
 
-- [ ] `/start` handler → `POST /auth/register/start` (bot_id + username)
-- [ ] `/start` → v2 WebApp tugmasi (`WebAppInfo(url=V2_WEBAPP_URL)`)
-- [ ] v2 WebApp URL frontend bilan kelishilgan (`?v2=1` yoki alohida sahifa)
-- [ ] (ixtiyoriy) PDF'ni chatga yuborish kerakmi — backend bilan kelishing
-- [ ] Reklamadan oldin adminka GraphBot listni import qildi
-- [ ] Smoke test (7-bo'lim) bajarildi
-
-Bot tomoni shu — qolgan hammasi WebApp + backend (tayyor, remote'da).
+- [ ] `/start` → `POST /auth/register/start`
+- [ ] `/start` → `GET /dtm/online/subjects` → fan inline tugmalari (2 bosqich)
+- [ ] 2 fan → `POST /dtm/online/v2/start`
+- [ ] Reply-keyboard WebApp tugmasi (sendData uchun)
+- [ ] `F.web_app_data` handler → forma FSM
+- [ ] Forma → `POST /dtm/online/v2/complete` → ballni ko'rsatish
+- [ ] (frontend) WebApp `tg.sendData('{"done":true}')` qo'shilgan
+- [ ] Redis + queue worker ishlaydi (PDF avtomatik yetkazish)

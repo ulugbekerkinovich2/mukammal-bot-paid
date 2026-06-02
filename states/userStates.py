@@ -23,5 +23,11 @@ class Registration(StatesGroup):
 
 
 class OnlineV2(StatesGroup):
-    # v2 (reklama) yupqa oqim: faqat fan juftligini tanlash, qolgani WebApp ichida.
-    pick_subjects = State()
+    # v2 (reklama) oqim: bot fanlarni so'raydi → v2/start → WebApp test →
+    # web_app_data → forma → v2/complete.
+    first_subject = State()
+    second_subject = State()
+    in_test = State()        # WebApp test davom etmoqda (sendData kutilmoqda)
+    full_name = State()
+    phone = State()
+    school_code = State()

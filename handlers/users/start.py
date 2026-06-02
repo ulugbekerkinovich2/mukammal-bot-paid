@@ -2076,128 +2076,291 @@ def online_test_url(user_id: Optional[int] = None) -> str:
     return f"{base}{sep}chat_id={int(user_id)}"
 
 
-# ----------------------------
-# v2 (reklama) — yupqa promo oqim
-# ----------------------------
-# /start v2 deep-link: userni track qiladi, fan juftligini so'raydi, tanlangach
-# v2 WebApp'ni tanlangan fanlar bilan ochadi. Forma, ball, natija — hammasi
-# WebApp ichida (backend tayyor: docs/online-test-v2-promo-bot.md).
-V2_SUBJECT_PROMPT = (
-    "🎯 <b>Bepul DTM sinov testi!</b>\n\n"
-    "Qaysi fanlar bo'yicha test ishlaysiz? Juftlikni tanlang:"
-)
+# ============================================================
+# v2 (reklama) oqim — docs/online-test-v2-promo-bot.md
+# ============================================================
+# /start v2: track → GET /dtm/online/subjects → 2 bosqichli fan tanlash →
+# POST /dtm/online/v2/start → reply-keyboard WebApp tugma → test → web_app_data
+# (sendData) → forma (FIO/tel/maktab) → POST /dtm/online/v2/complete → ball.
+# PDF backend worker tomonidan avtomatik chatga keladi.
 
-
-def v2_webapp_url(
-    user_id: Optional[int] = None,
-    first_subject_id: Optional[int] = None,
-    second_subject_id: Optional[int] = None,
-) -> str:
-    """v2 WebApp URL. V2_WEBAPP_URL berilmagan bo'lsa WEBAPP_URL'ga ?v2=1 qo'shadi.
-    chat_id + tanlangan fanlar query param sifatida qo'shiladi (frontend o'qiydi;
-    WebApp ichida initData ustun)."""
+def v2_webapp_url(user_id: Optional[int] = None) -> str:
+    """v2 WebApp URL. V2_WEBAPP_URL berilmasa WEBAPP_URL ishlatiladi. WebApp
+    chat_id'ni initData'dan oladi; brauzer fallback uchun query'ga ham qo'yamiz."""
     from data.config import V2_WEBAPP_URL, WEBAPP_URL
-    base = (V2_WEBAPP_URL or "").strip()
-    if not base:
-        b = (WEBAPP_URL or "").strip()
-        sep = "&" if ("?" in b) else "?"
-        base = f"{b}{sep}v2=1"
-
-    extra = []
+    base = (V2_WEBAPP_URL or "").strip() or (WEBAPP_URL or "").strip()
     if user_id:
-        extra.append(f"chat_id={int(user_id)}")
-    if first_subject_id:
-        extra.append(f"first_subject_id={int(first_subject_id)}")
-    if second_subject_id:
-        extra.append(f"second_subject_id={int(second_subject_id)}")
-    for p in extra:
         sep = "&" if ("?" in base) else "?"
-        base = f"{base}{sep}{p}"
+        base = f"{base}{sep}chat_id={int(user_id)}"
     return base
 
 
-def v2_pairs_kb(ui_lang: str = "uz") -> types.InlineKeyboardMarkup:
-    """v2 fan juftligi tugmalari (SUBJECTS_MAP relative bo'yicha). v1 pairs_kb bilan
-    bir xil mantiq, lekin callback prefiksi `v2pair:` — v1 handler bilan to'qnashmaydi."""
-    kb = types.InlineKeyboardMarkup(row_width=1)
-    for first_uz, info in SUBJECTS_MAP.items():
-        first_label = first_uz if ui_lang == "uz" else info.get("ru", first_uz)
-        first_id = info["id"]
-        rel_uz = info.get("relative", {}).get("uz", [])
-        rel_ru = info.get("relative", {}).get("ru", [])
-        for i, second_uz in enumerate(rel_uz):
-            second_label = rel_ru[i] if (ui_lang == "ru" and i < len(rel_ru)) else second_uz
-            second_info = SUBJECTS_MAP.get(second_uz)
-            if not second_info:
-                continue
-            second_id = second_info["id"]
-            kb.add(types.InlineKeyboardButton(
-                f"{first_label} — {second_label}",
-                callback_data=f"v2pair:{first_id}|{second_id}",
-            ))
+async def _v2_api_get(path: str) -> Dict[str, Any]:
+    url = f"{API_V1}{path}"
+    timeout = aiohttp.ClientTimeout(total=15)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url) as r:
+                text = await r.text()
+                if r.status >= 400:
+                    logger.warning(f"[v2 GET] {path} -> {r.status}: {text[:200]}")
+                    return {"ok": False, "status": r.status, "text": text}
+                try:
+                    return {"ok": True, "status": r.status, "data": await r.json()}
+                except Exception:
+                    return {"ok": False, "status": r.status, "text": text}
+    except Exception as e:
+        logger.error(f"[v2 GET] {path} error: {repr(e)}")
+        return {"ok": False, "status": 503, "text": str(e)}
+
+
+async def _v2_api_post(path: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    url = f"{API_V1}{path}"
+    timeout = aiohttp.ClientTimeout(total=30)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(url, json=payload) as r:
+                text = await r.text()
+                if r.status >= 400:
+                    logger.warning(f"[v2 POST] {path} -> {r.status}: {text[:200]}")
+                    return {"ok": False, "status": r.status, "text": text}
+                try:
+                    return {"ok": True, "status": r.status, "data": await r.json()}
+                except Exception:
+                    return {"ok": True, "status": r.status, "data": {}, "raw": text}
+    except Exception as e:
+        logger.error(f"[v2 POST] {path} error: {repr(e)}")
+        return {"ok": False, "status": 503, "text": str(e)}
+
+
+def _v2_extract_subjects(data: Any) -> List[Dict[str, Any]]:
+    if isinstance(data, list):
+        return [s for s in data if isinstance(s, dict)]
+    if isinstance(data, dict):
+        for key in ("items", "results", "subjects", "data"):
+            v = data.get(key)
+            if isinstance(v, list):
+                return [s for s in v if isinstance(s, dict)]
+    return []
+
+
+def _v2_subject_name(s: Dict[str, Any]) -> str:
+    return str(s.get("name_uz") or s.get("name") or s.get("name_ru") or s.get("mt_id") or "")
+
+
+def _v2_subjects_kb(subjects: List[Dict[str, Any]], prefix: str) -> types.InlineKeyboardMarkup:
+    kb = types.InlineKeyboardMarkup(row_width=2)
+    btns = []
+    for s in subjects:
+        mt = s.get("mt_id")
+        if mt is None:
+            continue
+        btns.append(types.InlineKeyboardButton(_v2_subject_name(s), callback_data=f"{prefix}:{mt}"))
+    if btns:
+        kb.add(*btns)
     return kb
+
+
+def _v2_name_by_id(subjects: List[Dict[str, Any]], mt_id: int) -> str:
+    for s in subjects:
+        if str(s.get("mt_id")) == str(mt_id):
+            return _v2_subject_name(s)
+    return str(mt_id)
 
 
 async def _track_start_v2(tg_user) -> None:
     """v2: /start bosgan userni bazaga yozish — idempotent, best-effort.
     X-Api-Key talab qilinmaydi (ochiq endpoint). Xato test oqimini bloklamasin."""
-    url = f"{API_V1}/auth/register/start"
     payload: Dict[str, Any] = {"bot_id": str(tg_user.id)}
     if tg_user.username:
         payload["username"] = tg_user.username  # @ siz; bo'sh bo'lsa yuborilmaydi
-    try:
-        timeout = aiohttp.ClientTimeout(total=10)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(url, json=payload) as r:
-                logger.info(f"[v2 track] register/start -> {r.status} user_id={tg_user.id}")
-    except Exception as e:
-        logger.warning(f"[v2 track] failed (ignored) user_id={tg_user.id}: {repr(e)}")
+    res = await _v2_api_post("/auth/register/start", payload)
+    logger.info(f"[v2 track] register/start -> {res.get('status')} user_id={tg_user.id}")
 
 
 async def on_start_v2(message: types.Message, state: FSMContext) -> None:
-    # 1) start bosgan userni saqlaymiz (forma to'lmasa ham yo'qolmaydi)
+    # 1) tracking (best-effort, bloklamaydi)
     await _track_start_v2(message.from_user)
-    # 2) fan juftligini so'raymiz — tanlangach WebApp ochiladi
+
+    # 2) fan ro'yxati — backend mt_id'lari (lokal SUBJECTS_MAP emas)
+    res = await _v2_api_get("/dtm/online/subjects")
+    subjects = _v2_extract_subjects(res.get("data")) if res.get("ok") else []
+    if not subjects:
+        await message.answer(
+            "⚠️ Hozircha fanlar ro'yxatini olishda xatolik. Birozdan so'ng /start qayta urinib ko'ring."
+        )
+        return
+
+    await state.update_data(v2_subjects=subjects)
     await message.answer(
-        V2_SUBJECT_PROMPT,
+        "🎯 <b>Bepul DTM sinov testi!</b>\n\nBirinchi (majburiy) faningizni tanlang:",
         parse_mode="HTML",
-        reply_markup=v2_pairs_kb("uz"),
+        reply_markup=_v2_subjects_kb(subjects, "v2s1"),
         disable_web_page_preview=True,
     )
-    await OnlineV2.pick_subjects.set()
+    await OnlineV2.first_subject.set()
 
 
-@dp.callback_query_handler(lambda c: c.data and c.data.startswith("v2pair:"), state="*")
-async def v2_pick_pair(call: types.CallbackQuery, state: FSMContext):
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith("v2s1:"), state=OnlineV2.first_subject)
+async def v2_pick_first(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
     try:
-        first_s, second_s = call.data.split(":", 1)[1].split("|")
-        first_id, second_id = int(first_s), int(second_s)
+        first_id = int(call.data.split(":", 1)[1])
     except Exception:
-        await call.answer(tr("uz", "pair_not_found"), show_alert=True)
+        await call.answer("Fan topilmadi", show_alert=True)
         return
 
-    first_name, _ = find_subject_by_id(first_id)
-    second_name, _ = find_subject_by_id(second_id)
-    if not first_name or not second_name:
-        await call.answer(tr("uz", "pair_not_found"), show_alert=True)
-        return
+    data = await state.get_data()
+    subjects = data.get("v2_subjects") or []
+    first_name = _v2_name_by_id(subjects, first_id)
+    await state.update_data(first_subject_id=first_id, first_subject_name=first_name)
 
-    url = v2_webapp_url(call.from_user.id, first_id, second_id)
-    kb = types.InlineKeyboardMarkup(row_width=1)
-    kb.add(types.InlineKeyboardButton(
-        text="📝 Testni boshlash",
-        web_app=types.WebAppInfo(url=url),
-    ))
-    text = (
-        f"✅ Tanlangan fanlar: <b>{first_name} — {second_name}</b>\n\n"
-        "Testni boshlash uchun tugmani bosing:"
-    )
+    await OnlineV2.second_subject.set()
     try:
-        await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+        await call.message.edit_text(
+            f"✅ 1-fan: <b>{first_name}</b>\n\nIkkinchi (tanlov) faningizni tanlang:",
+            parse_mode="HTML",
+            reply_markup=_v2_subjects_kb(subjects, "v2s2"),
+        )
     except Exception:
-        await call.message.answer(text, parse_mode="HTML", reply_markup=kb)
+        await call.message.answer(
+            "Ikkinchi (tanlov) faningizni tanlang:",
+            reply_markup=_v2_subjects_kb(subjects, "v2s2"),
+        )
+
+
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith("v2s2:"), state=OnlineV2.second_subject)
+async def v2_pick_second(call: types.CallbackQuery, state: FSMContext):
+    await call.answer()
+    try:
+        second_id = int(call.data.split(":", 1)[1])
+    except Exception:
+        await call.answer("Fan topilmadi", show_alert=True)
+        return
+
+    data = await state.get_data()
+    subjects = data.get("v2_subjects") or []
+    first_id = data.get("first_subject_id")
+    first_name = data.get("first_subject_name") or _v2_name_by_id(subjects, first_id)
+    second_name = _v2_name_by_id(subjects, second_id)
+
+    # test + 90-savol daftari yaratish
+    payload: Dict[str, Any] = {
+        "bot_id": str(call.from_user.id),
+        "first_subject_id": first_id,
+        "second_subject_id": second_id,
+    }
+    if call.from_user.username:
+        payload["username"] = call.from_user.username
+
+    res = await _v2_api_post("/dtm/online/v2/start", payload)
+    if not res.get("ok"):
+        txt = str(res.get("text") or "")
+        if res.get("status") == 400 and "subject" in txt.lower():
+            await call.message.answer("❌ Fan tanlovida xatolik. /start v2 bilan qayta urinib ko'ring.")
+        else:
+            await call.message.answer(f"❌ Test tayyorlashda xatolik ({res.get('status')}). Keyinroq urinib ko'ring.")
+        await state.finish()
+        return
+
+    # WebApp tugma — sendData ishlashi uchun REPLY keyboard (inline emas)
+    kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.add(types.KeyboardButton(
+        text="📝 Testni boshlash",
+        web_app=types.WebAppInfo(url=v2_webapp_url(call.from_user.id)),
+    ))
+
+    await OnlineV2.in_test.set()
+    try:
+        await call.message.edit_text(
+            f"✅ Tanlangan fanlar: <b>{first_name} — {second_name}</b>",
+            parse_mode="HTML",
+        )
+    except Exception:
+        pass
+    await call.message.answer(
+        "Tayyor! Pastdagi <b>📝 Testni boshlash</b> tugmasi orqali testni boshlang.\n"
+        "Test tugagach, natijangizni ko'rish uchun ma'lumotlaringizni so'raymiz.",
+        parse_mode="HTML",
+        reply_markup=kb,
+    )
+
+
+@dp.message_handler(content_types=types.ContentType.WEB_APP_DATA, state=OnlineV2.in_test)
+async def v2_on_test_done(message: types.Message, state: FSMContext):
+    # WebApp tg.sendData('{"done":true}') yuboradi → forma boshlanadi
+    await OnlineV2.full_name.set()
+    await message.answer(
+        "✅ Test topshirildi!\n\n"
+        "Natijangizni ko'rish uchun ma'lumotlaringizni to'ldiring.\n\n"
+        "Familiya Ism kiriting:\nNamuna: Erkinov Ulug‘bek",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+
+
+@dp.message_handler(state=OnlineV2.full_name)
+async def v2_get_name(message: types.Message, state: FSMContext):
+    fio = normalize_fio_to_surname_name(message.text or "")
+    if not fio:
+        await message.answer(tr("uz", "fio_invalid_2words"))
+        return
+    await state.update_data(full_name=fio)
+    await OnlineV2.phone.set()
+    await message.answer("📞 Telefon raqamingizni yuboring.\nNamuna: 941234567 (yoki +998941234567)")
+
+
+@dp.message_handler(state=OnlineV2.phone)
+async def v2_get_phone(message: types.Message, state: FSMContext):
+    phone_text = message.contact.phone_number if message.contact else (message.text or "")
+    if not is_phone_ok(phone_text):
+        await message.answer(tr("uz", "phone_invalid"))
+        return
+    await state.update_data(phone=normalize_uz_phone(phone_text))
+    await OnlineV2.school_code.set()
+    await message.answer("🏫 Maktab kodingizni kiriting (masalan: <code>SHAY186</code>):", parse_mode="HTML")
+
+
+@dp.message_handler(state=OnlineV2.school_code)
+async def v2_get_school_and_finish(message: types.Message, state: FSMContext):
+    school = (message.text or "").strip()
+    if not school:
+        await message.answer("Maktab kodini kiriting (masalan: SHAY186):")
+        return
+
+    data = await state.get_data()
+    res = await _v2_api_post("/dtm/online/v2/complete", {
+        "bot_id": str(message.from_user.id),
+        "full_name": data.get("full_name"),
+        "phone": data.get("phone"),
+        "school_code": school,
+    })
+
+    if not res.get("ok"):
+        txt = str(res.get("text") or "")
+        status = res.get("status")
+        if status == 400 and "school" in txt.lower():
+            # maktab kodi noto'g'ri — qayta so'raymiz (state saqlanadi)
+            await message.answer("❌ Maktab kodi topilmadi. Qayta kiriting (masalan: SHAY186):")
+            return
+        await state.finish()
+        if status == 404:
+            await message.answer("❌ Test topilmadi. /start v2 bilan qaytadan boshlang.")
+        else:
+            await message.answer(f"❌ Natijani olishda xatolik ({status}). Keyinroq urinib ko'ring.")
+        return
+
     await state.finish()
+    d = res.get("data") or {}
+    await message.answer(
+        "🎉 <b>Natijangiz</b>\n\n"
+        f"Umumiy ball: <b>{d.get('total_ball', '-')}</b>\n"
+        f"Majburiy fanlar: {d.get('mandatory_ball', '-')}\n"
+        f"1-fan: {d.get('primary_ball', '-')}\n"
+        f"2-fan: {d.get('secondary_ball', '-')}\n\n"
+        "📄 To'liq natija (PDF) bir zumda chatga yuboriladi…",
+        parse_mode="HTML",
+        reply_markup=ReplyKeyboardRemove(),
+    )
 
 
 def test_type_kb(ui_lang: str = "uz", user_id: Optional[int] = None) -> types.InlineKeyboardMarkup:
