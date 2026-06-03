@@ -2235,6 +2235,50 @@ def _v2_pdf_url(d: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+async def _v2_poll_pdf(bot_id: int, attempts: int = 20, delay: float = 3.0) -> Optional[str]:
+    """GET /dtm/online/v2/result?bot_id=... — pdf_url tayyor bo'lguncha poll.
+    ~attempts*delay (def. 60s). Tayyor bo'lsa absolyut URL qaytaradi."""
+    path = f"/dtm/online/v2/result?bot_id={bot_id}"
+    for _ in range(attempts):
+        res = await _v2_api_get(path)
+        if res.get("ok"):
+            d = res.get("data") or {}
+            url = _v2_pdf_url(d)
+            if url or str(d.get("status") or "").lower() == "ready":
+                if url:
+                    return url
+        await asyncio.sleep(delay)
+    return None
+
+
+async def _v2_send_pdf_button(message: types.Message, d: Dict[str, Any]) -> None:
+    """PDF havolasi bo'lsa inline tugma. complete'da null bo'lsa /v2/result poll qiladi."""
+    url = _v2_pdf_url(d)
+    if not url:
+        placeholder = await message.answer("📄 Natija PDF'i tayyorlanmoqda…")
+        url = await _v2_poll_pdf(message.chat.id)
+        if not url:
+            try:
+                await placeholder.edit_text("📄 PDF biroz keyinroq tayyor bo'ladi — tayyor bo'lgach yuboriladi.")
+            except Exception:
+                pass
+            return
+        kb = types.InlineKeyboardMarkup()
+        kb.add(types.InlineKeyboardButton(text="📄 Natijani PDF'da ko'rish", url=url))
+        try:
+            await placeholder.edit_text(
+                "To'liq natijangizni quyidagi tugma orqali oching:",
+                reply_markup=kb,
+            )
+        except Exception:
+            await message.answer("To'liq natijangizni quyidagi tugma orqali oching:", reply_markup=kb)
+        return
+
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton(text="📄 Natijani PDF'da ko'rish", url=url))
+    await message.answer("To'liq natijangizni quyidagi tugma orqali oching:", reply_markup=kb)
+
+
 async def _v2_track(state: FSMContext, *message_ids: Any) -> None:
     """Oraliq xabar id'larini yig'ib boradi — natijada o'chiriladi."""
     data = await state.get_data()
@@ -2680,12 +2724,6 @@ async def _v2_finish(message: types.Message, state: FSMContext, school_code: str
         return "-" if v in (None, "") else str(v)
 
     # DTM standart max: majburiy 33, asosiy 93, ikkinchi 63
-    pdf_url = _v2_pdf_url(d)
-    tail = (
-        ""
-        if pdf_url
-        else "\n\n📄 To'liq natija (PDF) bir zumda chatga yuboriladi…"
-    )
     await message.answer(
         "<b>Test natijasi:</b>\n\n"
         "<blockquote>"
@@ -2693,20 +2731,13 @@ async def _v2_finish(message: types.Message, state: FSMContext, school_code: str
         f"- {first_label}: {_ball(d.get('primary_ball'))} / 93\n"
         f"- {second_label}: {_ball(d.get('secondary_ball'))} / 63"
         "</blockquote>\n\n"
-        f"Jami: <b>{_ball(d.get('total_ball'))} ball</b>"
-        f"{tail}",
+        f"Jami: <b>{_ball(d.get('total_ball'))} ball</b>",
         parse_mode="HTML",
         reply_markup=ReplyKeyboardRemove(),
     )
 
-    # PDF havolasi bo'lsa — matn ostida inline tugma
-    if pdf_url:
-        pdf_kb = types.InlineKeyboardMarkup()
-        pdf_kb.add(types.InlineKeyboardButton(text="📄 Natijani PDF'da ko'rish", url=pdf_url))
-        await message.answer(
-            "To'liq natijangizni quyidagi tugma orqali yuklab oling:",
-            reply_markup=pdf_kb,
-        )
+    # PDF: complete'da tayyor bo'lsa darhol tugma, aks holda /v2/result poll
+    await _v2_send_pdf_button(message, d)
     return None
 
 
