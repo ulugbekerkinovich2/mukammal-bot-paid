@@ -2243,11 +2243,17 @@ async def _v2_begin_test(call: types.CallbackQuery, state: FSMContext,
         await state.finish()
         return
 
-    # WebApp tugma — sendData ishlashi uchun REPLY keyboard (inline emas)
-    kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add(types.KeyboardButton(
+    # Matn tagida inline tugmalar: WebApp ochish + test tugashini bildirish.
+    # Eslatma: inline WebApp sendData yubormaydi — shuning uchun "Testni tugatdim"
+    # tugmasi forma bosqichini qo'lda boshlaydi (v2_done_btn).
+    kb = types.InlineKeyboardMarkup(row_width=1)
+    kb.add(types.InlineKeyboardButton(
         text="📝 Testni boshlash",
         web_app=types.WebAppInfo(url=v2_webapp_url(call.from_user.id)),
+    ))
+    kb.add(types.InlineKeyboardButton(
+        text="✅ Testni tugatdim",
+        callback_data="v2done",
     ))
 
     await OnlineV2.in_test.set()
@@ -2259,8 +2265,9 @@ async def _v2_begin_test(call: types.CallbackQuery, state: FSMContext,
     except Exception:
         pass
     await call.message.answer(
-        "Tayyor! Pastdagi <b>📝 Testni boshlash</b> tugmasi orqali testni boshlang.\n"
-        "Test tugagach, natijangizni ko'rish uchun ma'lumotlaringizni so'raymiz.",
+        "Tayyor! <b>📝 Testni boshlash</b> tugmasi orqali testni boshlang.\n"
+        "Test tugagach, <b>✅ Testni tugatdim</b> tugmasini bosing — "
+        "natijangizni ko'rish uchun ma'lumotlaringizni so'raymiz.",
         parse_mode="HTML",
         reply_markup=kb,
     )
@@ -2380,9 +2387,7 @@ async def v2_pick_second(call: types.CallbackQuery, state: FSMContext):
     await _v2_begin_test(call, state, first_id, second_id, first_name, second_name)
 
 
-@dp.message_handler(content_types=types.ContentType.WEB_APP_DATA, state=OnlineV2.in_test)
-async def v2_on_test_done(message: types.Message, state: FSMContext):
-    # WebApp tg.sendData('{"done":true}') yuboradi → forma boshlanadi
+async def _v2_ask_full_name(message: types.Message, state: FSMContext) -> None:
     await OnlineV2.full_name.set()
     await message.answer(
         "✅ Test topshirildi!\n\n"
@@ -2390,6 +2395,22 @@ async def v2_on_test_done(message: types.Message, state: FSMContext):
         "Familiya Ism kiriting:\nNamuna: Erkinov Ulug‘bek",
         reply_markup=ReplyKeyboardRemove(),
     )
+
+
+@dp.callback_query_handler(lambda c: c.data == "v2done", state=OnlineV2.in_test)
+async def v2_done_btn(call: types.CallbackQuery, state: FSMContext):
+    await call.answer()
+    try:
+        await call.message.edit_reply_markup()  # tugmalarni olib tashlash (qayta bosilmasin)
+    except Exception:
+        pass
+    await _v2_ask_full_name(call.message, state)
+
+
+@dp.message_handler(content_types=types.ContentType.WEB_APP_DATA, state=OnlineV2.in_test)
+async def v2_on_test_done(message: types.Message, state: FSMContext):
+    # Fallback: agar WebApp sendData ishlatsa ham forma boshlanadi
+    await _v2_ask_full_name(message, state)
 
 
 @dp.message_handler(state=OnlineV2.full_name)
