@@ -2404,13 +2404,18 @@ async def v2_pick_second(call: types.CallbackQuery, state: FSMContext):
     await _v2_begin_test(call, state, first_id, second_id, first_name, second_name)
 
 
-async def _v2_ask_full_name(message: types.Message, state: FSMContext) -> None:
-    await OnlineV2.full_name.set()
+async def _v2_ask_phone(message: types.Message, state: FSMContext) -> None:
+    # 1-qadam: telefon raqam — contact share tugmasi bilan
+    await OnlineV2.phone.set()
+    kb = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    kb.add(types.KeyboardButton(text="📞 Raqamni yuborish", request_contact=True))
     await message.answer(
         "✅ Test topshirildi!\n\n"
         "Natijangizni ko'rish uchun ma'lumotlaringizni to'ldiring.\n\n"
-        "Familiya Ism kiriting:\nNamuna: Erkinov Ulug‘bek",
-        reply_markup=ReplyKeyboardRemove(),
+        "📞 Telefon raqamingizni yuboring — pastdagi <b>📞 Raqamni yuborish</b> "
+        "tugmasini bosing yoki qo'lda kiriting (masalan: 941234567).",
+        parse_mode="HTML",
+        reply_markup=kb,
     )
 
 
@@ -2421,13 +2426,28 @@ async def v2_done_btn(call: types.CallbackQuery, state: FSMContext):
         await call.message.edit_reply_markup()  # tugmalarni olib tashlash (qayta bosilmasin)
     except Exception:
         pass
-    await _v2_ask_full_name(call.message, state)
+    await _v2_ask_phone(call.message, state)
 
 
 @dp.message_handler(content_types=types.ContentType.WEB_APP_DATA, state=OnlineV2.in_test)
 async def v2_on_test_done(message: types.Message, state: FSMContext):
     # Fallback: agar WebApp sendData ishlatsa ham forma boshlanadi
-    await _v2_ask_full_name(message, state)
+    await _v2_ask_phone(message, state)
+
+
+@dp.message_handler(content_types=types.ContentType.CONTACT, state=OnlineV2.phone)
+@dp.message_handler(state=OnlineV2.phone)
+async def v2_get_phone(message: types.Message, state: FSMContext):
+    phone_text = message.contact.phone_number if message.contact else (message.text or "")
+    if not is_phone_ok(phone_text):
+        await message.answer(tr("uz", "phone_invalid"))
+        return
+    await state.update_data(phone=normalize_uz_phone(phone_text))
+    await OnlineV2.full_name.set()
+    await message.answer(
+        "Familiya Ism kiriting:\nNamuna: Erkinov Ulug‘bek",
+        reply_markup=ReplyKeyboardRemove(),
+    )
 
 
 @dp.message_handler(state=OnlineV2.full_name)
@@ -2437,17 +2457,6 @@ async def v2_get_name(message: types.Message, state: FSMContext):
         await message.answer(tr("uz", "fio_invalid_2words"))
         return
     await state.update_data(full_name=fio)
-    await OnlineV2.phone.set()
-    await message.answer("📞 Telefon raqamingizni yuboring.\nNamuna: 941234567 (yoki +998941234567)")
-
-
-@dp.message_handler(state=OnlineV2.phone)
-async def v2_get_phone(message: types.Message, state: FSMContext):
-    phone_text = message.contact.phone_number if message.contact else (message.text or "")
-    if not is_phone_ok(phone_text):
-        await message.answer(tr("uz", "phone_invalid"))
-        return
-    await state.update_data(phone=normalize_uz_phone(phone_text))
     await OnlineV2.school_code.set()
     await message.answer("🏫 Maktab kodingizni kiriting (masalan: <code>SHAY186</code>):", parse_mode="HTML")
 
