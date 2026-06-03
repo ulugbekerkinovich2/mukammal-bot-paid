@@ -2218,6 +2218,23 @@ def _v2_pairs_kb(subjects: List[Dict[str, Any]]) -> Tuple[types.InlineKeyboardMa
     return kb, len(seen)
 
 
+def _v2_pdf_url(d: Dict[str, Any]) -> Optional[str]:
+    """complete javobidan PDF havolasini topadi. Nisbiy yo'lni V2 host'iga ulaydi."""
+    if not isinstance(d, dict):
+        return None
+    for k in ("pdf_url", "pdf", "pdf_link", "file_url", "result_pdf", "pdf_file", "url"):
+        v = d.get(k)
+        if isinstance(v, str) and v.strip():
+            u = v.strip()
+            if u.startswith("http"):
+                return u
+            if u.startswith("/"):
+                from urllib.parse import urlsplit
+                p = urlsplit(V2_API_V1)
+                return f"{p.scheme}://{p.netloc}{u}"
+    return None
+
+
 async def _v2_begin_test(call: types.CallbackQuery, state: FSMContext,
                          first_id: int, second_id: int,
                          first_name: str, second_name: str) -> None:
@@ -2473,6 +2490,12 @@ async def v2_get_school_and_finish(message: types.Message, state: FSMContext):
         return "-" if v in (None, "") else str(v)
 
     # DTM standart max: majburiy 33, asosiy 93, ikkinchi 63
+    pdf_url = _v2_pdf_url(d)
+    tail = (
+        ""
+        if pdf_url
+        else "\n\n📄 To'liq natija (PDF) bir zumda chatga yuboriladi…"
+    )
     await message.answer(
         "<b>Test natijasi:</b>\n\n"
         "<blockquote>"
@@ -2480,11 +2503,20 @@ async def v2_get_school_and_finish(message: types.Message, state: FSMContext):
         f"- {first_label}: {_ball(d.get('primary_ball'))} / 93\n"
         f"- {second_label}: {_ball(d.get('secondary_ball'))} / 63"
         "</blockquote>\n\n"
-        f"Jami: <b>{_ball(d.get('total_ball'))} ball</b>\n\n"
-        "📄 To'liq natija (PDF) bir zumda chatga yuboriladi…",
+        f"Jami: <b>{_ball(d.get('total_ball'))} ball</b>"
+        f"{tail}",
         parse_mode="HTML",
         reply_markup=ReplyKeyboardRemove(),
     )
+
+    # PDF havolasi bo'lsa — matn ostida inline tugma
+    if pdf_url:
+        pdf_kb = types.InlineKeyboardMarkup()
+        pdf_kb.add(types.InlineKeyboardButton(text="📄 Natijani PDF'da ko'rish", url=pdf_url))
+        await message.answer(
+            "To'liq natijangizni quyidagi tugma orqali yuklab oling:",
+            reply_markup=pdf_kb,
+        )
 
 
 def test_type_kb(ui_lang: str = "uz", user_id: Optional[int] = None) -> types.InlineKeyboardMarkup:
