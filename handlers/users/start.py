@@ -2235,48 +2235,56 @@ def _v2_pdf_url(d: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-async def _v2_poll_pdf(bot_id: int, attempts: int = 20, delay: float = 3.0) -> Optional[str]:
-    """GET /dtm/online/v2/result?bot_id=... — pdf_url tayyor bo'lguncha poll.
-    ~attempts*delay (def. 60s). Tayyor bo'lsa absolyut URL qaytaradi."""
-    path = f"/dtm/online/v2/result?bot_id={bot_id}"
-    for _ in range(attempts):
-        res = await _v2_api_get(path)
-        if res.get("ok"):
-            d = res.get("data") or {}
-            url = _v2_pdf_url(d)
-            if url or str(d.get("status") or "").lower() == "ready":
-                if url:
-                    return url
-        await asyncio.sleep(delay)
-    return None
+def _v2_pdf_button_kb(url: str) -> types.InlineKeyboardMarkup:
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton(text="📄 Natijani PDF'da ko'rish", url=url))
+    return kb
 
 
 async def _v2_send_pdf_button(message: types.Message, d: Dict[str, Any]) -> None:
-    """PDF havolasi bo'lsa inline tugma. complete'da null bo'lsa /v2/result poll qiladi."""
+    """PDF havolasi bo'lsa inline tugma. complete'da null bo'lsa /v2/result poll
+    qiladi va kutish davomida placeholder'ni yangilab turadi (progress)."""
     url = _v2_pdf_url(d)
-    if not url:
-        placeholder = await message.answer("📄 Natija PDF'i tayyorlanmoqda…")
-        url = await _v2_poll_pdf(message.chat.id)
-        if not url:
-            try:
-                await placeholder.edit_text("📄 PDF biroz keyinroq tayyor bo'ladi — tayyor bo'lgach yuboriladi.")
-            except Exception:
-                pass
-            return
-        kb = types.InlineKeyboardMarkup()
-        kb.add(types.InlineKeyboardButton(text="📄 Natijani PDF'da ko'rish", url=url))
-        try:
-            await placeholder.edit_text(
-                "To'liq natijangizni quyidagi tugma orqali oching:",
-                reply_markup=kb,
-            )
-        except Exception:
-            await message.answer("To'liq natijangizni quyidagi tugma orqali oching:", reply_markup=kb)
+    if url:
+        await message.answer("To'liq natijangizni quyidagi tugma orqali oching:",
+                             reply_markup=_v2_pdf_button_kb(url))
         return
 
-    kb = types.InlineKeyboardMarkup()
-    kb.add(types.InlineKeyboardButton(text="📄 Natijani PDF'da ko'rish", url=url))
-    await message.answer("To'liq natijangizni quyidagi tugma orqali oching:", reply_markup=kb)
+    placeholder = await message.answer("📄 Natija PDF'i tayyorlanmoqda, biroz kuting…")
+    attempts, delay = 20, 3.0
+    waits = [
+        "📄 Natija PDF'i tayyorlanmoqda, biroz kuting",
+        "📄 PDF render qilinmoqda, deyarli tayyor",
+        "📄 Natijangiz hujjati shakllanmoqda",
+    ]
+    path = f"/dtm/online/v2/result?bot_id={message.chat.id}"
+    for i in range(attempts):
+        res = await _v2_api_get(path)
+        if res.get("ok"):
+            dd = res.get("data") or {}
+            u = _v2_pdf_url(dd)
+            if u:
+                try:
+                    await placeholder.edit_text(
+                        "To'liq natijangizni quyidagi tugma orqali oching:",
+                        reply_markup=_v2_pdf_button_kb(u),
+                    )
+                except Exception:
+                    await message.answer("To'liq natijangizni quyidagi tugma orqali oching:",
+                                         reply_markup=_v2_pdf_button_kb(u))
+                return
+        # progress yangilash (matn har safar farqli — "not modified" bo'lmasin)
+        dots = "." * (1 + i % 3)
+        try:
+            await placeholder.edit_text(f"{waits[i % len(waits)]}{dots}")
+        except Exception:
+            pass
+        await asyncio.sleep(delay)
+
+    try:
+        await placeholder.edit_text("📄 PDF biroz keyinroq tayyor bo'ladi — tayyor bo'lgach yuboriladi.")
+    except Exception:
+        pass
 
 
 async def _v2_track(state: FSMContext, *message_ids: Any) -> None:
@@ -2285,6 +2293,13 @@ async def _v2_track(state: FSMContext, *message_ids: Any) -> None:
     trash = list(data.get("v2_trash") or [])
     trash.extend(int(m) for m in message_ids if m)
     await state.update_data(v2_trash=trash)
+
+
+async def _v2_say(message: types.Message, state: FSMContext, text: str, **kw) -> types.Message:
+    """Bot xabarini yuborib, id'sini track qiladi (oraliq xabar — keyin o'chadi)."""
+    m = await message.answer(text, **kw)
+    await _v2_track(state, m.message_id)
+    return m
 
 
 async def _v2_cleanup(bot, chat_id: int, state: FSMContext) -> None:
@@ -2503,9 +2518,10 @@ async def v2_on_test_done(message: types.Message, state: FSMContext):
 @dp.message_handler(content_types=types.ContentType.CONTACT, state=OnlineV2.phone)
 @dp.message_handler(state=OnlineV2.phone)
 async def v2_get_phone(message: types.Message, state: FSMContext):
+    await _v2_track(state, message.message_id)  # user input (xato bo'lsa ham)
     phone_text = message.contact.phone_number if message.contact else (message.text or "")
     if not is_phone_ok(phone_text):
-        await message.answer(tr("uz", "phone_invalid"))
+        await _v2_say(message, state, tr("uz", "phone_invalid"))
         return
     await state.update_data(phone=normalize_uz_phone(phone_text))
     await OnlineV2.full_name.set()
@@ -2513,17 +2529,17 @@ async def v2_get_phone(message: types.Message, state: FSMContext):
         "Familiya Ism kiriting:\nNamuna: Erkinov Ulug‘bek",
         reply_markup=ReplyKeyboardRemove(),
     )
-    await _v2_track(state, message.message_id, sent.message_id)
+    await _v2_track(state, sent.message_id)
 
 
 @dp.message_handler(state=OnlineV2.full_name)
 async def v2_get_name(message: types.Message, state: FSMContext):
+    await _v2_track(state, message.message_id)  # user input (xato bo'lsa ham)
     fio = normalize_fio_to_surname_name(message.text or "")
     if not fio:
-        await message.answer(tr("uz", "fio_invalid_2words"))
+        await _v2_say(message, state, tr("uz", "fio_invalid_2words"))
         return
     await state.update_data(full_name=fio)
-    await _v2_track(state, message.message_id)
     await _v2_ask_region(message, state)
 
 
@@ -2670,23 +2686,24 @@ async def v2_pick_school(call: types.CallbackQuery, state: FSMContext):
     if result == "bad_school":
         data = await state.get_data()
         schools = data.get("v2_schools") or []
-        await call.message.answer(
+        sent = await call.message.answer(
             "❌ Bu maktab qabul qilinmadi. Boshqa maktab tanlang:",
             reply_markup=_v2_schools_kb(schools),
         )
+        await _v2_track(state, sent.message_id)
 
 
 @dp.message_handler(state=OnlineV2.school_code)
 async def v2_get_school_and_finish(message: types.Message, state: FSMContext):
     # Fallback: cascade ishlamasa maktab kodini qo'lda kiritish
+    await _v2_track(state, message.message_id)
     school = (message.text or "").strip()
     if not school:
-        await message.answer("Maktab kodini kiriting (masalan: SHAY186):")
+        await _v2_say(message, state, "Maktab kodini kiriting (masalan: SHAY186):")
         return
-    await _v2_track(state, message.message_id)
     result = await _v2_finish(message, state, school)
     if result == "bad_school":
-        await message.answer("❌ Maktab kodi topilmadi. Qayta kiriting (masalan: SHAY186):")
+        await _v2_say(message, state, "❌ Maktab kodi topilmadi. Qayta kiriting (masalan: SHAY186):")
 
 
 async def _v2_finish(message: types.Message, state: FSMContext, school_code: str) -> Optional[str]:
