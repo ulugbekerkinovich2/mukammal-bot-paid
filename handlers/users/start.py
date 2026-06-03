@@ -2604,27 +2604,42 @@ def _v2_schools_kb(schools: List[Dict[str, Any]]) -> types.InlineKeyboardMarkup:
 
 
 async def _v2_ask_region(message: types.Message, state: FSMContext) -> None:
+    wait = await message.answer("⏳ Iltimos, kuting…")
+    await _v2_track(state, wait.message_id)
     res = await fetch_regions()
     regions = (res.get("regions") or []) if res.get("ok") else []
     if not regions:
         # Fallback: ro'yxat olinmasa — maktab kodini qo'lda
         await OnlineV2.school_code.set()
-        sent = await message.answer(
-            "🏫 Maktab kodingizni kiriting (masalan: <code>SHAY186</code>):",
-            parse_mode="HTML",
-        )
-        await _v2_track(state, sent.message_id)
+        try:
+            await wait.edit_text(
+                "🏫 Maktab kodingizni kiriting (masalan: <code>SHAY186</code>):",
+                parse_mode="HTML",
+            )
+        except Exception:
+            sent = await message.answer(
+                "🏫 Maktab kodingizni kiriting (masalan: <code>SHAY186</code>):",
+                parse_mode="HTML",
+            )
+            await _v2_track(state, sent.message_id)
         return
     await state.update_data(v2_regions=regions)
     await OnlineV2.region.set()
-    sent = await message.answer("🌍 Viloyatingizni tanlang:", reply_markup=_v2_regions_kb(regions))
-    await _v2_track(state, sent.message_id)
+    try:
+        await wait.edit_text("🌍 Viloyatingizni tanlang:", reply_markup=_v2_regions_kb(regions))
+    except Exception:
+        sent = await message.answer("🌍 Viloyatingizni tanlang:", reply_markup=_v2_regions_kb(regions))
+        await _v2_track(state, sent.message_id)
 
 
 @dp.callback_query_handler(lambda c: c.data and c.data.startswith("v2rgn:"), state=OnlineV2.region)
 async def v2_pick_region(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
     region = call.data.split(":", 1)[1]
+    try:
+        await call.message.edit_text("⏳ Iltimos, kuting…")
+    except Exception:
+        pass
     res = await fetch_districts(region)
     districts = (res.get("districts") or []) if res.get("ok") else []
     if not districts:
@@ -2650,6 +2665,10 @@ async def v2_pick_region(call: types.CallbackQuery, state: FSMContext):
 async def v2_pick_district(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
     district = call.data.split(":", 1)[1]
+    try:
+        await call.message.edit_text("⏳ Iltimos, kuting…")
+    except Exception:
+        pass
     data = await state.get_data()
     region = data.get("v2_region") or ""
     res = await fetch_schools(region, district)
@@ -2688,6 +2707,10 @@ async def v2_back_to_region(call: types.CallbackQuery, state: FSMContext):
 @dp.callback_query_handler(lambda c: c.data == "v2back:district", state=OnlineV2.school)
 async def v2_back_to_district(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
+    try:
+        await call.message.edit_text("⏳ Iltimos, kuting…")
+    except Exception:
+        pass
     data = await state.get_data()
     region = data.get("v2_region") or ""
     res = await fetch_districts(region)
@@ -2708,7 +2731,7 @@ async def v2_pick_school(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
     code = call.data.split(":", 1)[1]
     try:
-        await call.message.edit_reply_markup()
+        await call.message.edit_text("⏳ Iltimos, kuting…")
     except Exception:
         pass
     result = await _v2_finish(call.message, state, code)
