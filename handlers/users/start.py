@@ -3907,23 +3907,25 @@ def extract_dtm_result_data(res):
 
 
 def format_dtm_result(data):
-    full_name = data.get('full_name', 'Noma\'lum')
-    document_code = data.get('document_code')
     total_ball = data.get('total_ball', 0)
-    subjects = data.get('subjects', [])
+    subjects = data.get('subjects', []) or []
 
-    msg = f"👤 <b>F.I.SH:</b> {full_name}\n"
-    if document_code:
-        msg += f"🆔 <b>Document code:</b> {document_code}\n"
-    msg += f"📊 <b>Umumiy ball:</b> {total_ball}\n\n"
-    
-    if subjects:
-        msg += "📖 <b>Fanlar bo'yicha natijalar:</b>\n"
-        for s in subjects:
-            msg += f"🔹 <b>{s.get('name')}:</b>\n"
-            msg += f"   ✅ To'g'ri: {s.get('correct')}/{s.get('allocated')}\n"
-            msg += f"   📈 Ball: {s.get('score')} ({s.get('percent')}%)\n"
-    
+    # DTM standart max ball (pozitsiya bo'yicha): majburiy 33, 1-fan 93, 2-fan 63
+    maxes = [33, 93, 63]
+
+    def _clean_name(name: Any) -> str:
+        # "24. Fizika" -> "Fizika" (oldidagi "raqam. " olib tashlanadi)
+        return re.sub(r"^\s*\d+\.\s*", "", str(name or "")).strip()
+
+    lines = []
+    for i, s in enumerate(subjects):
+        mx = maxes[i] if i < len(maxes) else s.get("allocated")
+        lines.append(f"- {_clean_name(s.get('name'))}: {s.get('score')} / {mx}")
+
+    msg = "<b>Test natijasi:</b>\n\n"
+    if lines:
+        msg += "<blockquote>" + "\n".join(lines) + "</blockquote>\n\n"
+    msg += f"Jami: <b>{total_ball} ball</b>"
     return msg
 
 @dp.message_handler(Command("natija"), state="*")
@@ -3977,7 +3979,7 @@ async def show_my_result(message: types.Message, state: FSMContext):
 
         # 1) Natija matnini darhol yuboramiz — PDF kutmaymiz
         await message.answer(
-            f"<b>Test natijangiz tayyor.</b>\n\n{formatted_text}",
+            formatted_text,
             parse_mode="HTML",
             disable_web_page_preview=True,
             reply_markup=kb,
