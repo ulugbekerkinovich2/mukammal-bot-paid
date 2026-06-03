@@ -2457,38 +2457,191 @@ async def v2_get_name(message: types.Message, state: FSMContext):
         await message.answer(tr("uz", "fio_invalid_2words"))
         return
     await state.update_data(full_name=fio)
-    await OnlineV2.school_code.set()
-    await message.answer("🏫 Maktab kodingizni kiriting (masalan: <code>SHAY186</code>):", parse_mode="HTML")
+    await _v2_ask_region(message, state)
+
+
+# ---- v2 maktab tanlash: viloyat → tuman → maktab (select, matn emas) ----
+
+def _v2_regions_kb(regions: List[str]) -> types.InlineKeyboardMarkup:
+    kb = types.InlineKeyboardMarkup(row_width=2)
+    for r in _dedupe_keep_order(regions)[:60]:
+        rr = str(r)[:50]
+        kb.insert(types.InlineKeyboardButton(rr, callback_data=f"v2rgn:{rr}"))
+    return kb
+
+
+def _v2_districts_kb(districts: List[str]) -> types.InlineKeyboardMarkup:
+    kb = types.InlineKeyboardMarkup(row_width=1)
+    for d in _dedupe_keep_order(districts)[:80]:
+        dd = str(d)[:50]
+        kb.add(types.InlineKeyboardButton(dd, callback_data=f"v2dist:{dd}"))
+    kb.row(types.InlineKeyboardButton("⬅️ Orqaga", callback_data="v2back:region"))
+    return kb
+
+
+def _v2_schools_kb(schools: List[Dict[str, Any]]) -> types.InlineKeyboardMarkup:
+    kb = types.InlineKeyboardMarkup(row_width=2)
+    for s in schools[:60]:
+        code = str(s.get("code") or "")
+        name = str(s.get("name") or code)
+        if not code:
+            continue
+        kb.insert(types.InlineKeyboardButton(name[:32], callback_data=f"v2sch:{code}"))
+    kb.row(types.InlineKeyboardButton("⬅️ Orqaga", callback_data="v2back:district"))
+    return kb
+
+
+async def _v2_ask_region(message: types.Message, state: FSMContext) -> None:
+    res = await fetch_regions()
+    regions = (res.get("regions") or []) if res.get("ok") else []
+    if not regions:
+        # Fallback: ro'yxat olinmasa — maktab kodini qo'lda
+        await OnlineV2.school_code.set()
+        await message.answer(
+            "🏫 Maktab kodingizni kiriting (masalan: <code>SHAY186</code>):",
+            parse_mode="HTML",
+        )
+        return
+    await state.update_data(v2_regions=regions)
+    await OnlineV2.region.set()
+    await message.answer("🌍 Viloyatingizni tanlang:", reply_markup=_v2_regions_kb(regions))
+
+
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith("v2rgn:"), state=OnlineV2.region)
+async def v2_pick_region(call: types.CallbackQuery, state: FSMContext):
+    await call.answer()
+    region = call.data.split(":", 1)[1]
+    res = await fetch_districts(region)
+    districts = (res.get("districts") or []) if res.get("ok") else []
+    if not districts:
+        await OnlineV2.school_code.set()
+        await call.message.answer(
+            "🏫 Tumanlar topilmadi. Maktab kodingizni kiriting (masalan: <code>SHAY186</code>):",
+            parse_mode="HTML",
+        )
+        return
+    await state.update_data(v2_region=region)
+    await OnlineV2.district.set()
+    try:
+        await call.message.edit_text(
+            f"🌍 Viloyat: <b>{region}</b>\n\n🏙 Tumaningizni tanlang:",
+            parse_mode="HTML",
+            reply_markup=_v2_districts_kb(districts),
+        )
+    except Exception:
+        await call.message.answer("🏙 Tumaningizni tanlang:", reply_markup=_v2_districts_kb(districts))
+
+
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith("v2dist:"), state=OnlineV2.district)
+async def v2_pick_district(call: types.CallbackQuery, state: FSMContext):
+    await call.answer()
+    district = call.data.split(":", 1)[1]
+    data = await state.get_data()
+    region = data.get("v2_region") or ""
+    res = await fetch_schools(region, district)
+    schools = (res.get("schools") or []) if res.get("ok") else []
+    if not schools:
+        await OnlineV2.school_code.set()
+        await call.message.answer(
+            "🏫 Bu tumanda maktab topilmadi. Maktab kodingizni kiriting (masalan: <code>SHAY186</code>):",
+            parse_mode="HTML",
+        )
+        return
+    await state.update_data(v2_district=district, v2_schools=schools)
+    await OnlineV2.school.set()
+    try:
+        await call.message.edit_text(
+            f"🏙 Tuman: <b>{district}</b>\n\n🏫 Maktabingizni tanlang:",
+            parse_mode="HTML",
+            reply_markup=_v2_schools_kb(schools),
+        )
+    except Exception:
+        await call.message.answer("🏫 Maktabingizni tanlang:", reply_markup=_v2_schools_kb(schools))
+
+
+@dp.callback_query_handler(lambda c: c.data == "v2back:region", state=[OnlineV2.district, OnlineV2.school])
+async def v2_back_to_region(call: types.CallbackQuery, state: FSMContext):
+    await call.answer()
+    data = await state.get_data()
+    regions = data.get("v2_regions") or []
+    await OnlineV2.region.set()
+    try:
+        await call.message.edit_text("🌍 Viloyatingizni tanlang:", reply_markup=_v2_regions_kb(regions))
+    except Exception:
+        await call.message.answer("🌍 Viloyatingizni tanlang:", reply_markup=_v2_regions_kb(regions))
+
+
+@dp.callback_query_handler(lambda c: c.data == "v2back:district", state=OnlineV2.school)
+async def v2_back_to_district(call: types.CallbackQuery, state: FSMContext):
+    await call.answer()
+    data = await state.get_data()
+    region = data.get("v2_region") or ""
+    res = await fetch_districts(region)
+    districts = (res.get("districts") or []) if res.get("ok") else []
+    await OnlineV2.district.set()
+    try:
+        await call.message.edit_text(
+            f"🌍 Viloyat: <b>{region}</b>\n\n🏙 Tumaningizni tanlang:",
+            parse_mode="HTML",
+            reply_markup=_v2_districts_kb(districts),
+        )
+    except Exception:
+        await call.message.answer("🏙 Tumaningizni tanlang:", reply_markup=_v2_districts_kb(districts))
+
+
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith("v2sch:"), state=OnlineV2.school)
+async def v2_pick_school(call: types.CallbackQuery, state: FSMContext):
+    await call.answer()
+    code = call.data.split(":", 1)[1]
+    try:
+        await call.message.edit_reply_markup()
+    except Exception:
+        pass
+    result = await _v2_finish(call.message, state, code)
+    if result == "bad_school":
+        data = await state.get_data()
+        schools = data.get("v2_schools") or []
+        await call.message.answer(
+            "❌ Bu maktab qabul qilinmadi. Boshqa maktab tanlang:",
+            reply_markup=_v2_schools_kb(schools),
+        )
 
 
 @dp.message_handler(state=OnlineV2.school_code)
 async def v2_get_school_and_finish(message: types.Message, state: FSMContext):
+    # Fallback: cascade ishlamasa maktab kodini qo'lda kiritish
     school = (message.text or "").strip()
     if not school:
         await message.answer("Maktab kodini kiriting (masalan: SHAY186):")
         return
+    result = await _v2_finish(message, state, school)
+    if result == "bad_school":
+        await message.answer("❌ Maktab kodi topilmadi. Qayta kiriting (masalan: SHAY186):")
 
+
+async def _v2_finish(message: types.Message, state: FSMContext, school_code: str) -> Optional[str]:
+    """v2/complete chaqiradi va natijani yuboradi.
+    Maktab kodi noto'g'ri bo'lsa 'bad_school' qaytaradi (state saqlanadi);
+    aks holda natija yuboriladi yoki xato beriladi, state finish qilinadi."""
     data = await state.get_data()
     res = await _v2_api_post("/dtm/online/v2/complete", {
-        "bot_id": str(message.from_user.id),
+        "bot_id": str(message.chat.id),
         "full_name": data.get("full_name"),
         "phone": data.get("phone"),
-        "school_code": school,
+        "school_code": school_code,
     })
 
     if not res.get("ok"):
         txt = str(res.get("text") or "")
         status = res.get("status")
         if status == 400 and "school" in txt.lower():
-            # maktab kodi noto'g'ri — qayta so'raymiz (state saqlanadi)
-            await message.answer("❌ Maktab kodi topilmadi. Qayta kiriting (masalan: SHAY186):")
-            return
+            return "bad_school"
         await state.finish()
         if status == 404:
             await message.answer("❌ Test topilmadi. /start v2 bilan qaytadan boshlang.")
         else:
             await message.answer(f"❌ Natijani olishda xatolik ({status}). Keyinroq urinib ko'ring.")
-        return
+        return None
 
     d = res.get("data") or {}
     first_label = data.get("first_subject_name") or "1-fan"
@@ -2526,6 +2679,7 @@ async def v2_get_school_and_finish(message: types.Message, state: FSMContext):
             "To'liq natijangizni quyidagi tugma orqali yuklab oling:",
             reply_markup=pdf_kb,
         )
+    return None
 
 
 def test_type_kb(ui_lang: str = "uz", user_id: Optional[int] = None) -> types.InlineKeyboardMarkup:

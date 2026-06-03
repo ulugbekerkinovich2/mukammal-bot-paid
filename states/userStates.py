@@ -30,4 +30,7 @@ class OnlineV2(StatesGroup):
     in_test = State()        # WebApp test davom etmoqda (sendData kutilmoqda)
     full_name = State()
     phone = State()
+    region = State()
+    district = State()
+    school = State()
     school_code = State()
