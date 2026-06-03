@@ -2235,6 +2235,24 @@ def _v2_pdf_url(d: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+async def _v2_track(state: FSMContext, *message_ids: Any) -> None:
+    """Oraliq xabar id'larini yig'ib boradi — natijada o'chiriladi."""
+    data = await state.get_data()
+    trash = list(data.get("v2_trash") or [])
+    trash.extend(int(m) for m in message_ids if m)
+    await state.update_data(v2_trash=trash)
+
+
+async def _v2_cleanup(bot, chat_id: int, state: FSMContext) -> None:
+    """Yig'ilgan oraliq xabarlarni o'chiradi (form/cascade prompt + user javoblari)."""
+    data = await state.get_data()
+    for mid in (data.get("v2_trash") or []):
+        try:
+            await bot.delete_message(chat_id, mid)
+        except Exception:
+            pass
+
+
 async def _v2_begin_test(call: types.CallbackQuery, state: FSMContext,
                          first_id: int, second_id: int,
                          first_name: str, second_name: str) -> None:
@@ -2281,13 +2299,14 @@ async def _v2_begin_test(call: types.CallbackQuery, state: FSMContext,
         )
     except Exception:
         pass
-    await call.message.answer(
+    tayyor = await call.message.answer(
         "Tayyor! <b>📝 Testni boshlash</b> tugmasi orqali testni boshlang.\n"
         "Test tugagach, <b>✅ Testni tugatdim</b> tugmasini bosing — "
         "natijangizni ko'rish uchun ma'lumotlaringizni so'raymiz.",
         parse_mode="HTML",
         reply_markup=kb,
     )
+    await _v2_track(state, call.message.message_id, tayyor.message_id)
 
 
 async def _track_start_v2(tg_user) -> None:
@@ -2409,7 +2428,7 @@ async def _v2_ask_phone(message: types.Message, state: FSMContext) -> None:
     await OnlineV2.phone.set()
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
     kb.add(types.KeyboardButton(text="📞 Raqamni yuborish", request_contact=True))
-    await message.answer(
+    sent = await message.answer(
         "✅ Test topshirildi!\n\n"
         "Natijangizni ko'rish uchun ma'lumotlaringizni to'ldiring.\n\n"
         "📞 Telefon raqamingizni yuboring — pastdagi <b>📞 Raqamni yuborish</b> "
@@ -2417,6 +2436,7 @@ async def _v2_ask_phone(message: types.Message, state: FSMContext) -> None:
         parse_mode="HTML",
         reply_markup=kb,
     )
+    await _v2_track(state, sent.message_id)
 
 
 @dp.callback_query_handler(lambda c: c.data == "v2done", state=OnlineV2.in_test)
@@ -2432,6 +2452,7 @@ async def v2_done_btn(call: types.CallbackQuery, state: FSMContext):
 @dp.message_handler(content_types=types.ContentType.WEB_APP_DATA, state=OnlineV2.in_test)
 async def v2_on_test_done(message: types.Message, state: FSMContext):
     # Fallback: agar WebApp sendData ishlatsa ham forma boshlanadi
+    await _v2_track(state, message.message_id)
     await _v2_ask_phone(message, state)
 
 
@@ -2444,10 +2465,11 @@ async def v2_get_phone(message: types.Message, state: FSMContext):
         return
     await state.update_data(phone=normalize_uz_phone(phone_text))
     await OnlineV2.full_name.set()
-    await message.answer(
+    sent = await message.answer(
         "Familiya Ism kiriting:\nNamuna: Erkinov Ulug‘bek",
         reply_markup=ReplyKeyboardRemove(),
     )
+    await _v2_track(state, message.message_id, sent.message_id)
 
 
 @dp.message_handler(state=OnlineV2.full_name)
@@ -2457,6 +2479,7 @@ async def v2_get_name(message: types.Message, state: FSMContext):
         await message.answer(tr("uz", "fio_invalid_2words"))
         return
     await state.update_data(full_name=fio)
+    await _v2_track(state, message.message_id)
     await _v2_ask_region(message, state)
 
 
@@ -2497,14 +2520,16 @@ async def _v2_ask_region(message: types.Message, state: FSMContext) -> None:
     if not regions:
         # Fallback: ro'yxat olinmasa — maktab kodini qo'lda
         await OnlineV2.school_code.set()
-        await message.answer(
+        sent = await message.answer(
             "🏫 Maktab kodingizni kiriting (masalan: <code>SHAY186</code>):",
             parse_mode="HTML",
         )
+        await _v2_track(state, sent.message_id)
         return
     await state.update_data(v2_regions=regions)
     await OnlineV2.region.set()
-    await message.answer("🌍 Viloyatingizni tanlang:", reply_markup=_v2_regions_kb(regions))
+    sent = await message.answer("🌍 Viloyatingizni tanlang:", reply_markup=_v2_regions_kb(regions))
+    await _v2_track(state, sent.message_id)
 
 
 @dp.callback_query_handler(lambda c: c.data and c.data.startswith("v2rgn:"), state=OnlineV2.region)
@@ -2614,6 +2639,7 @@ async def v2_get_school_and_finish(message: types.Message, state: FSMContext):
     if not school:
         await message.answer("Maktab kodini kiriting (masalan: SHAY186):")
         return
+    await _v2_track(state, message.message_id)
     result = await _v2_finish(message, state, school)
     if result == "bad_school":
         await message.answer("❌ Maktab kodi topilmadi. Qayta kiriting (masalan: SHAY186):")
@@ -2646,6 +2672,8 @@ async def _v2_finish(message: types.Message, state: FSMContext, school_code: str
     d = res.get("data") or {}
     first_label = data.get("first_subject_name") or "1-fan"
     second_label = data.get("second_subject_name") or "2-fan"
+    # Oraliq xabarlarni (form/cascade prompt + user javoblari) o'chiramiz
+    await _v2_cleanup(message.bot, message.chat.id, state)
     await state.finish()
 
     def _ball(v: Any) -> str:
