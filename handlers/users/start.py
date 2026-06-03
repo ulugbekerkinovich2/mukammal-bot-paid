@@ -2319,10 +2319,12 @@ async def _v2_begin_test(call: types.CallbackQuery, state: FSMContext,
     # Natija matni uchun fan nomlarini saqlab qo'yamiz
     await state.update_data(first_subject_name=first_name, second_subject_name=second_name)
 
+    data = await state.get_data()
     payload: Dict[str, Any] = {
         "bot_id": str(call.from_user.id),
         "first_subject_id": first_id,
         "second_subject_id": second_id,
+        "language": data.get("exam_lang") or "uz",
     }
     if call.from_user.username:
         payload["username"] = call.from_user.username
@@ -2393,26 +2395,53 @@ async def on_start_v2(message: types.Message, state: FSMContext) -> None:
 
     await state.update_data(v2_subjects=subjects)
 
-    # Avval tayyor fan kombinatsiyalarini bitta ro'yxatda ko'rsatamiz
-    pairs_kb, n_pairs = _v2_pairs_kb(subjects)
-    if n_pairs:
-        await message.answer(
-            "🎯 <b>Bepul DTM sinov testi!</b>\n\nFan kombinatsiyangizni tanlang:",
-            parse_mode="HTML",
-            reply_markup=pairs_kb,
-            disable_web_page_preview=True,
-        )
-        await OnlineV2.first_subject.set()
-        return
-
-    # Fallback: kombinatsiya tuzib bo'lmasa — eski 2 bosqichli tanlov
+    # 1-qadam: test tilini tanlash (fan tanlashdan oldin)
+    kb = types.InlineKeyboardMarkup(row_width=2)
+    kb.add(
+        types.InlineKeyboardButton("🇺🇿 O'zbekcha", callback_data="v2lang:uz"),
+        types.InlineKeyboardButton("🇷🇺 Русский", callback_data="v2lang:ru"),
+    )
     await message.answer(
-        "🎯 <b>Bepul DTM sinov testi!</b>\n\nBirinchi (majburiy) faningizni tanlang:",
+        "🎯 <b>Bepul DTM sinov testi!</b>\n\nTest tilini tanlang:",
         parse_mode="HTML",
-        reply_markup=_v2_subjects_kb(subjects, "v2s1"),
+        reply_markup=kb,
         disable_web_page_preview=True,
     )
+    await OnlineV2.exam_lang.set()
+
+
+async def _v2_show_subjects(message: types.Message, state: FSMContext, *, edit: bool = False) -> None:
+    """Fan kombinatsiyalarini (yoki 2-bosqichli tanlovni) ko'rsatadi."""
+    data = await state.get_data()
+    subjects = data.get("v2_subjects") or []
+
+    pairs_kb, n_pairs = _v2_pairs_kb(subjects)
+    if n_pairs:
+        text = "Fan kombinatsiyangizni tanlang:"
+        kb = pairs_kb
+    else:
+        # Fallback: kombinatsiya tuzib bo'lmasa — 2 bosqichli tanlov
+        text = "Birinchi (majburiy) faningizni tanlang:"
+        kb = _v2_subjects_kb(subjects, "v2s1")
+
+    if edit:
+        try:
+            await message.edit_text(text, reply_markup=kb)
+        except Exception:
+            await message.answer(text, reply_markup=kb)
+    else:
+        await message.answer(text, reply_markup=kb)
     await OnlineV2.first_subject.set()
+
+
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith("v2lang:"), state=OnlineV2.exam_lang)
+async def v2_pick_lang(call: types.CallbackQuery, state: FSMContext):
+    await call.answer()
+    lang = call.data.split(":", 1)[1]
+    if lang not in ("uz", "ru"):
+        lang = "uz"
+    await state.update_data(exam_lang=lang)
+    await _v2_show_subjects(call.message, state, edit=True)
 
 
 @dp.callback_query_handler(lambda c: c.data and c.data.startswith("v2pair:"), state=OnlineV2.first_subject)

@@ -25,6 +25,7 @@ class Registration(StatesGroup):
 class OnlineV2(StatesGroup):
     # v2 (reklama) oqim: bot fanlarni so'raydi → v2/start → WebApp test →
     # web_app_data → forma → v2/complete.
+    exam_lang = State()      # test tili (uz/ru) — fan tanlashdan oldin
     first_subject = State()
     second_subject = State()
     in_test = State()        # WebApp test davom etmoqda (sendData kutilmoqda)
