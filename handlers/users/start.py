@@ -2999,6 +2999,7 @@ async def is_subscribed(user_id: int, bot) -> bool:
 async def start_cmd(message: types.Message, state: FSMContext):
     # Avval oldingi flow ning bot xabarlarini o'chiramiz, keyin state ni reset qilamiz
     await cleanup_bot_messages(message.bot, message.chat.id, state)
+    await _v2_cleanup(message.bot, message.chat.id, state)  # v2 oqim oraliq xabarlari
     await state.finish()
 
     # v2 (reklama) oqim: V2_FOR_ALL=true bo'lsa hamma uchun, aks holda faqat
