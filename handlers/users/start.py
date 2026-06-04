@@ -2730,32 +2730,54 @@ async def v2_back_to_district(call: types.CallbackQuery, state: FSMContext):
 async def v2_pick_school(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
     code = call.data.split(":", 1)[1]
-    try:
-        await call.message.edit_text("⏳ Iltimos, kuting…")
-    except Exception:
-        pass
-    result = await _v2_finish(call.message, state, code)
-    if result == "bad_school":
-        data = await state.get_data()
-        schools = data.get("v2_schools") or []
-        sent = await call.message.answer(
-            "❌ Bu maktab qabul qilinmadi. Boshqa maktab tanlang:",
-            reply_markup=_v2_schools_kb(schools),
-        )
-        await _v2_track(state, sent.message_id)
+    await state.update_data(school_code=code)
+    await _v2_ask_gender(call.message, state)
 
 
 @dp.message_handler(state=OnlineV2.school_code)
-async def v2_get_school_and_finish(message: types.Message, state: FSMContext):
+async def v2_get_school_code(message: types.Message, state: FSMContext):
     # Fallback: cascade ishlamasa maktab kodini qo'lda kiritish
     await _v2_track(state, message.message_id)
     school = (message.text or "").strip()
     if not school:
         await _v2_say(message, state, "Maktab kodini kiriting (masalan: SHAY186):")
         return
-    result = await _v2_finish(message, state, school)
+    await state.update_data(school_code=school)
+    await _v2_ask_gender(message, state)
+
+
+async def _v2_ask_gender(message: types.Message, state: FSMContext) -> None:
+    # Oxirgi qadam: jins tanlash (inline)
+    await OnlineV2.gender.set()
+    kb = types.InlineKeyboardMarkup(row_width=2)
+    kb.add(
+        types.InlineKeyboardButton("👦 Erkak", callback_data="v2gender:male"),
+        types.InlineKeyboardButton("👧 Ayol", callback_data="v2gender:female"),
+    )
+    try:
+        await message.edit_text("🚻 Jinsingizni tanlang:", reply_markup=kb)
+    except Exception:
+        sent = await message.answer("🚻 Jinsingizni tanlang:", reply_markup=kb)
+        await _v2_track(state, sent.message_id)
+
+
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith("v2gender:"), state=OnlineV2.gender)
+async def v2_pick_gender(call: types.CallbackQuery, state: FSMContext):
+    await call.answer()
+    gender = call.data.split(":", 1)[1]
+    if gender not in ("male", "female"):
+        gender = "male"
+    await state.update_data(gender=gender)
+    try:
+        await call.message.edit_text("⏳ Iltimos, kuting…")
+    except Exception:
+        pass
+    data = await state.get_data()
+    code = data.get("school_code") or ""
+    result = await _v2_finish(call.message, state, code)
     if result == "bad_school":
-        await _v2_say(message, state, "❌ Maktab kodi topilmadi. Qayta kiriting (masalan: SHAY186):")
+        await OnlineV2.school_code.set()
+        await _v2_say(call.message, state, "❌ Maktab kodi topilmadi. Qayta kiriting (masalan: SHAY186):")
 
 
 async def _v2_finish(message: types.Message, state: FSMContext, school_code: str) -> Optional[str]:
@@ -2788,21 +2810,33 @@ async def _v2_finish(message: types.Message, state: FSMContext, school_code: str
     # Oraliq xabarlarni (form/cascade prompt + user javoblari) o'chiramiz
     await _v2_cleanup(message.bot, message.chat.id, state)
 
-    # Admin guruhiga ro'yxat xabari (v1 dagidek — V2_FOR_ALL'da ham bo'lsin)
+    # Admin guruhiga ro'yxat xabari (v1 format — V2_FOR_ALL'da ham bo'lsin)
     chat = message.chat
     uname = f"@{chat.username}" if chat.username else (chat.full_name or chat.first_name or "-")
     user_link = f'<a href="tg://user?id={chat.id}">{uname}</a>'
+    register_view = {
+        "phone": data.get("phone"),
+        "region": data.get("v2_region"),
+        "district": data.get("v2_district"),
+        "school_type": None,
+        "school_code": school_code,
+        "class_letter": None,
+        "exam_lang": data.get("exam_lang") or "uz",
+        "language": data.get("exam_lang") or "uz",
+        "gender": data.get("gender"),
+        "first_subject_id": data.get("first_subject_id"),
+        "first_subject_uz": data.get("first_subject_name"),
+        "second_subject_id": data.get("second_subject_id"),
+        "second_subject_uz": data.get("second_subject_name"),
+    }
     await notify_admins(message.bot, (
         f"🧾 <b>REGISTER SUCCESS (V2 PROMO)</b> · 🟢 ONLINE\n"
         f"🕒 <b>Time:</b> {now_str()}\n"
         f"👤 <b>User:</b> {user_link}\n"
         f"🆔 <b>Chat ID:</b> <code>{chat.id}</code>\n"
-        f"📝 <b>Full name:</b> <code>{data.get('full_name','-')}</code>\n"
-        f"📞 <b>Phone:</b> <code>{data.get('phone','-')}</code>\n"
-        f"🏫 <b>School:</b> <code>{school_code}</code>\n"
-        f"📚 <b>Fanlar:</b> {first_label} — {second_label}\n"
-        f"🗣 <b>Til:</b> {data.get('exam_lang','uz')}\n"
-        f"📊 <b>Ball:</b> {d.get('total_ball','-')}"
+        f"📝 <b>Full name:</b> <code>{data.get('full_name','-')}</code>\n\n"
+        f"{build_register_details(register_view)}\n"
+        f"📊 <b>Ball:</b> <code>{d.get('total_ball','-')}</code>"
     ))
 
     await state.finish()

@@ -35,3 +35,4 @@ class OnlineV2(StatesGroup):
     district = State()
     school = State()
     school_code = State()
+    gender = State()         # jins (male/female) — maktabdan keyin, oxirgi qadam
