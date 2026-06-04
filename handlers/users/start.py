@@ -2091,14 +2091,20 @@ def online_test_url(user_id: Optional[int] = None) -> str:
 # (sendData) → forma (FIO/tel/maktab) → POST /dtm/online/v2/complete → ball.
 # PDF backend worker tomonidan avtomatik chatga keladi.
 
-def v2_webapp_url(user_id: Optional[int] = None) -> str:
+def v2_webapp_url(user_id: Optional[int] = None, lang: Optional[str] = None) -> str:
     """v2 WebApp URL. V2_WEBAPP_URL berilmasa WEBAPP_URL ishlatiladi. WebApp
-    chat_id'ni initData'dan oladi; brauzer fallback uchun query'ga ham qo'yamiz."""
+    chat_id'ni initData'dan oladi; brauzer fallback uchun query'ga ham qo'yamiz.
+    Test tili (lang) WebApp'ga query orqali uzatiladi."""
     from data.config import V2_WEBAPP_URL, WEBAPP_URL
     base = (V2_WEBAPP_URL or "").strip() or (WEBAPP_URL or "").strip()
+    params = []
     if user_id:
+        params.append(f"chat_id={int(user_id)}")
+    if lang:
+        params.append(f"lang={lang}")
+    for p in params:
         sep = "&" if ("?" in base) else "?"
-        base = f"{base}{sep}chat_id={int(user_id)}"
+        base = f"{base}{sep}{p}"
     return base
 
 
@@ -2345,7 +2351,7 @@ async def _v2_begin_test(call: types.CallbackQuery, state: FSMContext,
     kb = types.InlineKeyboardMarkup(row_width=1)
     kb.add(types.InlineKeyboardButton(
         text="📝 Testni boshlash",
-        web_app=types.WebAppInfo(url=v2_webapp_url(call.from_user.id)),
+        web_app=types.WebAppInfo(url=v2_webapp_url(call.from_user.id, data.get("exam_lang") or "uz")),
     ))
     kb.add(types.InlineKeyboardButton(
         text="✅ Testni tugatdim",
