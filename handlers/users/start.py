@@ -2787,6 +2787,24 @@ async def _v2_finish(message: types.Message, state: FSMContext, school_code: str
     second_label = data.get("second_subject_name") or "2-fan"
     # Oraliq xabarlarni (form/cascade prompt + user javoblari) o'chiramiz
     await _v2_cleanup(message.bot, message.chat.id, state)
+
+    # Admin guruhiga ro'yxat xabari (v1 dagidek — V2_FOR_ALL'da ham bo'lsin)
+    chat = message.chat
+    uname = f"@{chat.username}" if chat.username else (chat.full_name or chat.first_name or "-")
+    user_link = f'<a href="tg://user?id={chat.id}">{uname}</a>'
+    await notify_admins(message.bot, (
+        f"🧾 <b>REGISTER SUCCESS (V2 PROMO)</b> · 🟢 ONLINE\n"
+        f"🕒 <b>Time:</b> {now_str()}\n"
+        f"👤 <b>User:</b> {user_link}\n"
+        f"🆔 <b>Chat ID:</b> <code>{chat.id}</code>\n"
+        f"📝 <b>Full name:</b> <code>{data.get('full_name','-')}</code>\n"
+        f"📞 <b>Phone:</b> <code>{data.get('phone','-')}</code>\n"
+        f"🏫 <b>School:</b> <code>{school_code}</code>\n"
+        f"📚 <b>Fanlar:</b> {first_label} — {second_label}\n"
+        f"🗣 <b>Til:</b> {data.get('exam_lang','uz')}\n"
+        f"📊 <b>Ball:</b> {d.get('total_ball','-')}"
+    ))
+
     await state.finish()
 
     def _ball(v: Any) -> str:
