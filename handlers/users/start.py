@@ -2790,6 +2790,8 @@ async def _v2_finish(message: types.Message, state: FSMContext, school_code: str
         "full_name": data.get("full_name"),
         "phone": data.get("phone"),
         "school_code": school_code,
+        "gender": data.get("gender"),
+        "language": data.get("exam_lang") or "uz",
     })
 
     if not res.get("ok"):
