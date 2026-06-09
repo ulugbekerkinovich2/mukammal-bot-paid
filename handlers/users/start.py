@@ -1752,6 +1752,25 @@ def school_type_kb(ui_lang: str, *, show_all_fallback: bool = False) -> InlineKe
 INLINE_PICK_PREFIX = "##sch##:"
 
 
+# Bitta sahifada ko'rsatiladigan maktablar soni (2 ustun × 5 qator).
+SCHOOLS_PAGE_SIZE = 10
+
+
+def _schools_nav_row(page: int, total: int, cb_prefix: str) -> Optional[List[InlineKeyboardButton]]:
+    """Sahifalash navigatsiya qatori: ⬅️  N/M  ➡️. Bitta sahifa bo'lsa None."""
+    pages = max(1, (total + SCHOOLS_PAGE_SIZE - 1) // SCHOOLS_PAGE_SIZE)
+    if pages <= 1:
+        return None
+    page = max(0, min(page, pages - 1))
+    row: List[InlineKeyboardButton] = []
+    if page > 0:
+        row.append(InlineKeyboardButton("⬅️", callback_data=f"{cb_prefix}{page - 1}"))
+    row.append(InlineKeyboardButton(f"{page + 1}/{pages}", callback_data="noop"))
+    if page < pages - 1:
+        row.append(InlineKeyboardButton("➡️", callback_data=f"{cb_prefix}{page + 1}"))
+    return row
+
+
 def schools_kb(
     ui_lang: str,
     schools: List[Dict[str, Any]],
@@ -1760,14 +1779,22 @@ def schools_kb(
     show_back_to_full: bool = False,
     show_inline_search: bool = True,
     back_to: str = "district",
+    page: int = 0,
 ):
     kb = InlineKeyboardMarkup(row_width=2)
-    for s in schools[:60]:
+    schools = schools or []
+    pages = max(1, (len(schools) + SCHOOLS_PAGE_SIZE - 1) // SCHOOLS_PAGE_SIZE)
+    page = max(0, min(page, pages - 1))
+    start = page * SCHOOLS_PAGE_SIZE
+    for s in schools[start:start + SCHOOLS_PAGE_SIZE]:
         code = str(s.get("code") or "")
         name = str(s.get("name") or code)
         if not code:
             continue
         kb.insert(InlineKeyboardButton(name[:32], callback_data=f"reg_school:{code}"))
+    nav = _schools_nav_row(page, len(schools), "reg_school_page:")
+    if nav:
+        kb.row(*nav)
     if show_inline_search:
         # switch_inline_query_current_chat — joriy chat'da `@bot ` deb yozadi va
         # foydalanuvchi har keystroke'da real-time inline natijalarni ko'radi.
@@ -2597,14 +2624,21 @@ def _v2_districts_kb(districts: List[str]) -> types.InlineKeyboardMarkup:
     return kb
 
 
-def _v2_schools_kb(schools: List[Dict[str, Any]]) -> types.InlineKeyboardMarkup:
+def _v2_schools_kb(schools: List[Dict[str, Any]], page: int = 0) -> types.InlineKeyboardMarkup:
     kb = types.InlineKeyboardMarkup(row_width=2)
-    for s in schools[:60]:
+    schools = schools or []
+    pages = max(1, (len(schools) + SCHOOLS_PAGE_SIZE - 1) // SCHOOLS_PAGE_SIZE)
+    page = max(0, min(page, pages - 1))
+    start = page * SCHOOLS_PAGE_SIZE
+    for s in schools[start:start + SCHOOLS_PAGE_SIZE]:
         code = str(s.get("code") or "")
         name = str(s.get("name") or code)
         if not code:
             continue
         kb.insert(types.InlineKeyboardButton(name[:32], callback_data=f"v2sch:{code}"))
+    nav = _schools_nav_row(page, len(schools), "v2schpage:")
+    if nav:
+        kb.row(*nav)
     kb.row(types.InlineKeyboardButton("⬅️ Orqaga", callback_data="v2back:district"))
     return kb
 
@@ -2730,6 +2764,18 @@ async def v2_back_to_district(call: types.CallbackQuery, state: FSMContext):
         )
     except Exception:
         await call.message.answer("🏙 Tumaningizni tanlang:", reply_markup=_v2_districts_kb(districts))
+
+
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith("v2schpage:"), state=OnlineV2.school)
+async def v2_school_page(call: types.CallbackQuery, state: FSMContext):
+    await call.answer()
+    data = await state.get_data()
+    page = _safe_int(call.data.split(":", 1)[1], 0)
+    schools = data.get("v2_schools") or []
+    try:
+        await call.message.edit_reply_markup(reply_markup=_v2_schools_kb(schools, page=page))
+    except Exception:
+        pass
 
 
 @dp.callback_query_handler(lambda c: c.data and c.data.startswith("v2sch:"), state=OnlineV2.school)
@@ -3338,12 +3384,17 @@ async def reg_pick_school_type(call: types.CallbackQuery, state: FSMContext):
         if code:
             school_map[code] = name
             schools_full.append({"code": code, "name": name})
-    await state.update_data(school_map=school_map, schools_full=schools_full)
+    await state.update_data(
+        school_map=school_map,
+        schools_full=schools_full,
+        school_view=schools_full,
+        school_kb_opts={"back_to": "school_type"},
+    )
 
     await edit_clean(
         call, state,
         tr(ui_lang, "school_pick_ask"),
-        reply_markup=schools_kb(ui_lang, schools, back_to="school_type"),
+        reply_markup=schools_kb(ui_lang, schools_full, back_to="school_type"),
     )
     await Registration.school.set()
 
@@ -3371,6 +3422,7 @@ async def reg_school_show_all(call: types.CallbackQuery, state: FSMContext):
     if not schools_full:
         await edit_clean(call, state, tr(ui_lang, "schools_not_found"), reply_markup=None)
         return
+    await state.update_data(school_view=schools_full, school_kb_opts={})
     await edit_clean(
         call, state,
         tr(ui_lang, "school_pick_ask"),
@@ -3390,9 +3442,10 @@ async def _handle_school_search_text(message: types.Message, state: FSMContext) 
         return
 
     schools_full = data.get("schools_full") or []
-    matches = filter_schools_by_query(query, schools_full)
+    matches = filter_schools_by_query(query, schools_full, limit=300)
 
     if not matches:
+        await state.update_data(school_view=[], school_kb_opts={"show_search": False, "show_back_to_full": True})
         await message.answer(
             tr(ui_lang, "school_search_no_match"),
             reply_markup=schools_kb(ui_lang, [], show_search=False, show_back_to_full=True),
@@ -3400,6 +3453,7 @@ async def _handle_school_search_text(message: types.Message, state: FSMContext) 
         await Registration.school.set()
         return
 
+    await state.update_data(school_view=matches, school_kb_opts={"show_search": False, "show_back_to_full": True})
     await message.answer(
         tr(ui_lang, "school_search_results"),
         reply_markup=schools_kb(ui_lang, matches, show_search=False, show_back_to_full=True),
@@ -3592,6 +3646,24 @@ async def inline_school_search(query: InlineQuery):
         logger.info(f"[inline_school_search] answered with {len(results)} results")
     except Exception as e:
         logger.exception(f"[inline_school_search] answer failed: {e}")
+
+
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith("reg_school_page:"), state=[Registration.school, Registration.school_search])
+async def reg_school_page(call: types.CallbackQuery, state: FSMContext):
+    await call.answer()
+    data = await state.get_data()
+    ui_lang = data.get("ui_lang", "uz")
+    page = _safe_int(call.data.split(":", 1)[1], 0)
+    view = data.get("school_view")
+    if view is None:
+        view = data.get("schools_full") or []
+    opts = data.get("school_kb_opts") or {}
+    try:
+        await call.message.edit_reply_markup(
+            reply_markup=schools_kb(ui_lang, view, page=page, **opts),
+        )
+    except Exception:
+        pass
 
 
 @dp.callback_query_handler(lambda c: c.data.startswith("reg_school:"), state=[Registration.school, Registration.school_search])
