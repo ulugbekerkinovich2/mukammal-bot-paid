@@ -1,5 +1,6 @@
 import re
 import os
+import io
 import json
 import uuid
 import html
@@ -2274,13 +2275,42 @@ def _v2_pdf_button_kb(url: str) -> types.InlineKeyboardMarkup:
     return kb
 
 
+async def _v2_send_pdf_document(message: types.Message, url: str) -> bool:
+    """PDF'ni URL'dan yuklab olib chatga hujjat (fayl) sifatida yuboradi.
+    Muvaffaqiyatli bo'lsa True."""
+    if not url:
+        return False
+    try:
+        timeout = aiohttp.ClientTimeout(total=60)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url) as r:
+                if r.status >= 400:
+                    logger.warning(f"[v2 pdf] download {r.status}: {url}")
+                    return False
+                content = await r.read()
+        if not content:
+            return False
+        bio = io.BytesIO(content)
+        bio.name = "natija.pdf"
+        await message.answer_document(
+            types.InputFile(bio, filename="natija.pdf"),
+            caption="📄 Natijangiz (PDF)",
+        )
+        return True
+    except Exception as e:
+        logger.error(f"[v2 pdf] send document error: {repr(e)}")
+        return False
+
+
 async def _v2_send_pdf_button(message: types.Message, d: Dict[str, Any]) -> None:
-    """PDF havolasi bo'lsa inline tugma. complete'da null bo'lsa /v2/result poll
-    qiladi va kutish davomida placeholder'ni yangilab turadi (progress)."""
+    """PDF havolasi bo'lsa inline tugma + faylni hujjat ko'rinishida yuboradi.
+    complete'da null bo'lsa /v2/result poll qiladi va kutish davomida
+    placeholder'ni yangilab turadi (progress)."""
     url = _v2_pdf_url(d)
     if url:
         await message.answer("To'liq natijangizni quyidagi tugma orqali oching:",
                              reply_markup=_v2_pdf_button_kb(url))
+        await _v2_send_pdf_document(message, url)
         return
 
     placeholder = await message.answer("📄 Natija PDF'i tayyorlanmoqda, biroz kuting…")
@@ -2305,6 +2335,7 @@ async def _v2_send_pdf_button(message: types.Message, d: Dict[str, Any]) -> None
                 except Exception:
                     await message.answer("To'liq natijangizni quyidagi tugma orqali oching:",
                                          reply_markup=_v2_pdf_button_kb(u))
+                await _v2_send_pdf_document(message, u)
                 return
         # progress yangilash (matn har safar farqli — "not modified" bo'lmasin)
         dots = "." * (1 + i % 3)
@@ -2570,6 +2601,17 @@ async def v2_done_btn(call: types.CallbackQuery, state: FSMContext):
     await _v2_ask_phone(call.message, state)
 
 
+async def _restart_if_start(message: types.Message, state: FSMContext) -> bool:
+    """Har qanday FSM state'da user /start yozsa — generic text handler tutib
+    olmasin, balki to'liq /start oqimi (state.finish + cleanup) ishlasin.
+    Tutib olingan bo'lsa True qaytaradi."""
+    txt = (message.text or "").strip()
+    if txt == "/start" or txt.startswith("/start ") or txt.startswith("/start@"):
+        await start_cmd(message, state)
+        return True
+    return False
+
+
 @dp.message_handler(content_types=types.ContentType.WEB_APP_DATA, state=OnlineV2.in_test)
 async def v2_on_test_done(message: types.Message, state: FSMContext):
     # Fallback: agar WebApp sendData ishlatsa ham forma boshlanadi
@@ -2580,6 +2622,8 @@ async def v2_on_test_done(message: types.Message, state: FSMContext):
 @dp.message_handler(content_types=types.ContentType.CONTACT, state=OnlineV2.phone)
 @dp.message_handler(state=OnlineV2.phone)
 async def v2_get_phone(message: types.Message, state: FSMContext):
+    if await _restart_if_start(message, state):
+        return
     await _v2_track(state, message.message_id)  # user input (xato bo'lsa ham)
     phone_text = message.contact.phone_number if message.contact else (message.text or "")
     if not is_phone_ok(phone_text):
@@ -2596,6 +2640,8 @@ async def v2_get_phone(message: types.Message, state: FSMContext):
 
 @dp.message_handler(state=OnlineV2.full_name)
 async def v2_get_name(message: types.Message, state: FSMContext):
+    if await _restart_if_start(message, state):
+        return
     await _v2_track(state, message.message_id)  # user input (xato bo'lsa ham)
     fio = normalize_fio_to_surname_name(message.text or "")
     if not fio:
@@ -2788,6 +2834,8 @@ async def v2_pick_school(call: types.CallbackQuery, state: FSMContext):
 
 @dp.message_handler(state=OnlineV2.school_code)
 async def v2_get_school_code(message: types.Message, state: FSMContext):
+    if await _restart_if_start(message, state):
+        return
     # Fallback: cascade ishlamasa maktab kodini qo'lda kiritish
     await _v2_track(state, message.message_id)
     school = (message.text or "").strip()
@@ -3251,6 +3299,8 @@ async def reg_phone_contact(message: types.Message, state: FSMContext):
 
 @dp.message_handler(state=Registration.phone)
 async def reg_phone_text(message: types.Message, state: FSMContext):
+    if await _restart_if_start(message, state):
+        return
     data = await state.get_data()
     ui_lang = data.get("ui_lang", "uz")
 
@@ -3266,6 +3316,8 @@ async def reg_phone_text(message: types.Message, state: FSMContext):
 
 @dp.message_handler(state=Registration.fio)
 async def reg_fio(message: types.Message, state: FSMContext):
+    if await _restart_if_start(message, state):
+        return
     data = await state.get_data()
     ui_lang = data.get("ui_lang", "uz")
 
@@ -3515,6 +3567,8 @@ def _extract_inline_school_code(text: str) -> Optional[str]:
     content_types=types.ContentType.TEXT,
 )
 async def reg_school_search_input(message: types.Message, state: FSMContext):
+    if await _restart_if_start(message, state):
+        return
     text = message.text or ""
 
     # Inline natija orqali kelgan xabar (via_bot bilan keladi)? Code'ni
