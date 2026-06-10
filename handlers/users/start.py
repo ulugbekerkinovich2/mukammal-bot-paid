@@ -2959,8 +2959,8 @@ async def _v2_finish(message: types.Message, state: FSMContext, school_code: str
         reply_markup=ReplyKeyboardRemove(),
     )
 
-    # PDF: complete'da tayyor bo'lsa darhol tugma, aks holda /v2/result poll
-    await _v2_send_pdf_button(message, d)
+    # PDF botdan yuborilmaydi — backend worker to'liq natija PDF'ini avtomatik
+    # yuboradi (doc §5). Dublikat bo'lmasligi uchun bot tugma/fayl yubormaydi.
     return None
 
 
