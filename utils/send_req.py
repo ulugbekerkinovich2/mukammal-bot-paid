@@ -367,18 +367,11 @@ async def add_chat_id(chat_id_user, first_name_user, last_name_user, pin, phone,
 # =========================
 # Management endpoints (BASE_URL + SECRET_KEY)
 # =========================
-def _build_url(path: str) -> str:
-    """
-    BASE_URL qaysi ko‘rinishda bo‘lishidan qat'i nazar, urlni to‘g‘ri yig‘adi.
-    """
-    base = (BASE_URL or "").rstrip("/")
-    p = (path or "").lstrip("/")
+MANAGEMENT_BASE_URL = "https://dtmpaperreaderapi.mentalaba.uz"
 
-    # BASE_URL /api/v1 bilan tugasa, dubl bo‘lib ketmasin
-    if base.endswith("/api/v1") and p.startswith("api/v1/"):
-        p = p[len("api/v1/"):]
-    if base.endswith("/api") and p.startswith("api/"):
-        p = p[len("api/"):]
+def _build_url(path: str) -> str:
+    base = MANAGEMENT_BASE_URL.rstrip("/")
+    p = (path or "").lstrip("/")
     return f"{base}/{p}"
 
 
