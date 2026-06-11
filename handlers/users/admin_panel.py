@@ -120,6 +120,7 @@ async def noop(call: types.CallbackQuery):
 @dp.message_handler(commands=["admin"], state="*")
 async def admin_cmd(message: types.Message, state: FSMContext):
     if not is_admin(message.from_user.id):
+        await message.answer(f"Ruxsat yo'q. Sizning ID: <code>{message.from_user.id}</code>", parse_mode="HTML")
         return
 
     await state.finish()
