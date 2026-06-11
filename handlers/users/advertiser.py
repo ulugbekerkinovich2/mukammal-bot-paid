@@ -183,7 +183,7 @@ async def get_post_url(message: types.Message, state: FSMContext):
 # Callback handler: tasdiqlash yoki bekor qilish
 @dp.callback_query_handler(lambda c: c.data in ["confirm_post", "cancel_post"], state=NewAdsState.confirm_post)
 async def send_post_to_users(callback_query: types.CallbackQuery, state: FSMContext):
-    # ic('getting post')
+    await callback_query.answer()
     data = await state.get_data()
 
     if callback_query.data == "cancel_post":
@@ -194,43 +194,71 @@ async def send_post_to_users(callback_query: types.CallbackQuery, state: FSMCont
     channel = data["post_data"]["channel"]
     post_id = data["post_data"]["post_id"]
 
-    all_users = send_req.get_all_users()  # foydalanuvchi ro'yxati [{chat_id:...}, ...]
-    # print(all_users)
-    # time.sleep(10)
-    count, failed = 0, 0
+    await callback_query.message.edit_text("📤 Foydalanuvchilar ro'yxati yuklanmoqda...")
+
+    all_users = await asyncio.to_thread(send_req.get_all_users)
+    total = len(all_users)
+    count, failed, processed = 0, 0, 0
+    last_edit_ts = 0.0
+    last_text = ""
+
+    async def render_progress(force: bool = False):
+        nonlocal last_edit_ts, last_text
+        now = time.monotonic()
+        if not force and now - last_edit_ts < 2.0:
+            return
+        pct = int(processed * 100 / total) if total else 100
+        bar_len = 20
+        filled = int(bar_len * pct / 100)
+        bar = "█" * filled + "░" * (bar_len - filled)
+        text = (
+            f"📤 <b>Yuborish jarayonda...</b>\n\n"
+            f"<code>[{bar}] {pct}%</code>\n\n"
+            f"👥 Jami: <b>{total}</b>\n"
+            f"📨 Ko'rib chiqildi: <b>{processed}</b>\n"
+            f"✅ Yuborildi: <b>{count}</b>\n"
+            f"❌ Yuborilmadi: <b>{failed}</b>"
+        )
+        if text == last_text:
+            return
+        try:
+            await callback_query.message.edit_text(text, parse_mode="HTML")
+            last_text = text
+            last_edit_ts = now
+        except Exception as e:
+            print(f"progress edit failed: {e}")
+
+    await render_progress(force=True)
 
     for idx, user in enumerate(all_users, start=1):
         chat_id = user['chat_id']
-        print(91, chat_id)
         if chat_id == "935920479":
-        # if bot_id != 8:
-        #     continue
             try:
-
                 await bot.forward_message(
                     chat_id=user['chat_id'],
                     from_chat_id=channel,
                     message_id=post_id
                 )
                 count += 1
-                # updated = send_req.update_user(user['id'], user['chat_id'],user['firstname'], user['lastname'],user['bot_id'],user['username'],"active",user['created_at'])
-                send_req.update_user_status(user['chat_id'], user['bot_id'], "active")
-                # ic(f"User {user['chat_id']} ga yuborildi")
+                await asyncio.to_thread(send_req.update_user_status, user['chat_id'], user['bot_id'], "active")
             except Exception as e:
                 failed += 1
-                # ic(user)
-                send_req.update_user_status(user['chat_id'], user['bot_id'], "blocked")
-                # updated = send_req.update_user(user['id'], user['chat_id'],user['firstname'], user['lastname'],user['bot_id'],user['username'],"blocked",user['created_at'])
+                try:
+                    await asyncio.to_thread(send_req.update_user_status, user['chat_id'], user['bot_id'], "blocked")
+                except Exception as db_err:
+                    print(f"DB update failed: {db_err}")
                 print(f"User {user['chat_id']} ga yuborilmadi: {e}")
-            # har 100 tadan keyin 1 sekund kutish
-            if idx % 100 == 0:
+            if idx % 30 == 0:
                 await asyncio.sleep(1)
+        processed = idx
+        await render_progress()
 
     await callback_query.message.edit_text(
-        f"📢 Post foydalanuvchilarga yuborish tugadi ✅\n\n"
-        f"✅ Yuborilganlar: {count}\n"
-        f"❌ Yuborilmaganlar: {failed}\n"
-        f"👥 Jami: {len(all_users)}"
+        f"📢 <b>Yuborish tugadi</b> ✅\n\n"
+        f"✅ Yuborilganlar: <b>{count}</b>\n"
+        f"❌ Yuborilmaganlar: <b>{failed}</b>\n"
+        f"👥 Jami: <b>{total}</b>",
+        parse_mode="HTML"
     )
     await state.finish()
 
