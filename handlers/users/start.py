@@ -1714,8 +1714,13 @@ async def start_cmd(message: types.Message, state: FSMContext):
     await cleanup_bot_messages(message.bot, message.chat.id, state)
     await state.finish()
 
-    # v2: deep link yoki BOT_VERSION=v2 bo'lsa hammaga
+    # v2: deep link yoki BOT_VERSION=v2 bo'lsa hammaga (adminlar bundan mustasno)
     if message.get_args() == "v2" or BOT_VERSION == "v2":
+        from data.config import ADMINS
+        from keyboards.default.userKeyboard import adminKeyboard_user
+        if str(message.from_user.id) in ADMINS:
+            await message.answer("Admin panelga xush kelibsiz!", reply_markup=adminKeyboard_user)
+            return
         from handlers.users.v2_start import start_v2_flow
         await start_v2_flow(message, state)
         return
