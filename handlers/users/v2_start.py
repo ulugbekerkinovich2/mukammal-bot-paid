@@ -72,7 +72,7 @@ async def v2_phone_contact(message: types.Message, state: FSMContext):
     await V2Form.fio.set()
 
 
-@dp.message_handler(~Command(), state=V2Form.phone)
+@dp.message_handler(lambda m: not (m.text or "").startswith("/"), state=V2Form.phone)
 async def v2_phone_text(message: types.Message, state: FSMContext):
     raw = (message.text or "").strip()
     if not _is_phone_ok(raw):
@@ -88,7 +88,7 @@ async def v2_phone_text(message: types.Message, state: FSMContext):
     await V2Form.fio.set()
 
 
-@dp.message_handler(~Command(), state=V2Form.fio)
+@dp.message_handler(lambda m: not (m.text or "").startswith("/"), state=V2Form.fio)
 async def v2_fio(message: types.Message, state: FSMContext):
     fio = (message.text or "").strip()
     if len(fio.split()) < 2 or len(fio) < 5:
@@ -101,7 +101,7 @@ async def v2_fio(message: types.Message, state: FSMContext):
     await V2Form.university.set()
 
 
-@dp.message_handler(~Command(), state=V2Form.university)
+@dp.message_handler(lambda m: not (m.text or "").startswith("/"), state=V2Form.university)
 async def v2_university(message: types.Message, state: FSMContext):
     university = (message.text or "").strip()
     if not university:

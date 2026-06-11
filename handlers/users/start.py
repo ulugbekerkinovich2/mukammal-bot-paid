@@ -1911,7 +1911,7 @@ async def reg_phone_contact(message: types.Message, state: FSMContext):
     await send_clean(message, state, tr(ui_lang, "fio_ask"), reply_markup=ReplyKeyboardRemove())
     await Registration.fio.set()
 
-@dp.message_handler(~Command(), state=Registration.phone)
+@dp.message_handler(lambda m: not (m.text or "").startswith("/"), state=Registration.phone)
 async def reg_phone_text(message: types.Message, state: FSMContext):
     data = await state.get_data()
     ui_lang = data.get("ui_lang", "uz")
@@ -1926,7 +1926,7 @@ async def reg_phone_text(message: types.Message, state: FSMContext):
     await send_clean(message, state, tr(ui_lang, "fio_ask"), reply_markup=ReplyKeyboardRemove())
     await Registration.fio.set()
 
-@dp.message_handler(~Command(), state=Registration.fio)
+@dp.message_handler(lambda m: not (m.text or "").startswith("/"), state=Registration.fio)
 async def reg_fio(message: types.Message, state: FSMContext):
     data = await state.get_data()
     ui_lang = data.get("ui_lang", "uz")
