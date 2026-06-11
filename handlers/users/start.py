@@ -1714,10 +1714,8 @@ async def start_cmd(message: types.Message, state: FSMContext):
     await cleanup_bot_messages(message.bot, message.chat.id, state)
     await state.finish()
 
-    # v2: deep link yoki BOT_VERSION=v2 bo'lsa, lekin adminlarni o'tkazib yuboramiz
-    from data.config import ADMINS
-    _user_is_admin = str(message.from_user.id) in ADMINS
-    if not _user_is_admin and (message.get_args() == "v2" or BOT_VERSION == "v2"):
+    # v2: deep link yoki BOT_VERSION=v2 bo'lsa hammaga
+    if message.get_args() == "v2" or BOT_VERSION == "v2":
         from handlers.users.v2_start import start_v2_flow
         await start_v2_flow(message, state)
         return
