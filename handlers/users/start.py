@@ -31,7 +31,7 @@ from utils.send_req import (
     REGISTER_RETRY_ATTEMPTS,
 )
 from data.config import ADMIN_CHAT_ID, CHANNEL_USERNAME, CHANNEL_LINK
-from data.config import BASE_URL
+from data.config import BASE_URL, BOT_VERSION
 
 import asyncio
 from collections import defaultdict
@@ -1713,6 +1713,12 @@ async def start_cmd(message: types.Message, state: FSMContext):
     # Avval oldingi flow ning bot xabarlarini o'chiramiz, keyin state ni reset qilamiz
     await cleanup_bot_messages(message.bot, message.chat.id, state)
     await state.finish()
+
+    # v2: deep link yoki BOT_VERSION=v2 bo'lsa hammaga
+    if message.get_args() == "v2" or BOT_VERSION == "v2":
+        from handlers.users.v2_start import start_v2_flow
+        await start_v2_flow(message, state)
+        return
 
     # Queue workerlarni ishga tushiramiz (1 marta)
     await ensure_register_workers(message.bot, workers=2)

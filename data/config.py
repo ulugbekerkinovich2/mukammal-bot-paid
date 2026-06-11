@@ -17,6 +17,9 @@ REDIS_URL = env.str("REDIS_URL")
 SECRET_KEY = env.str("SECRET_KEY")
 RESULTS_FILE_PATH = env.str("RESULTS_FILE_PATH", "data/natijalar.xlsx")
 WEBAPP_URL = env.str("WEBAPP_URL", "https://dtm.your-domain.uz/online-test/")
+CHANNEL_ADS_ID = env.str("CHANNEL_ADS_ID")
+CHANNEL_ADS_THREAD_ID = env.int("CHANNEL_ADS_THREAD_ID", 0)
+BOT_VERSION = env.str("BOT_VERSION", "v1")
 # SUBJECTS_MAP = {
 #     "Matematika": {
 #         "id": 20,
