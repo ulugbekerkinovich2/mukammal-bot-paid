@@ -786,6 +786,7 @@ def _mentalaba_headers() -> Dict[str, str]:
     headers: Dict[str, str] = {
         "accept": "application/json",
         "content-type": "application/json",
+        "User-Agent": "Mozilla/5.0 (compatible; DTM-Bot/1.0)",
     }
     key = (MENTALABA_API_KEY or "").strip()
     if key:

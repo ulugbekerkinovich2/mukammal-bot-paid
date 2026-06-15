@@ -2999,14 +2999,10 @@ async def _v2_finish(message: types.Message, state: FSMContext, school_code: str
         if cert_res.get("ok") and isinstance(cert_path, str) and cert_path.strip():
             base = (MENTALABA_API_BASE or "https://api.mentalaba.uz").rstrip("/")
             cert_url = cert_path if cert_path.startswith("http") else f"{base}/{cert_path.lstrip('/')}"
-            try:
-                await message.answer_document(cert_url, caption="🎓 Sertifikatingiz")
-            except Exception as doc_err:
-                logger.error(f"[mentalaba] sertifikat fayl yuborilmadi: {doc_err}")
-                kb = types.InlineKeyboardMarkup().add(
-                    types.InlineKeyboardButton("🎓 Sertifikatni yuklab olish", url=cert_url)
-                )
-                await message.answer("Sertifikatingizni quyidagi tugma orqali yuklab oling:", reply_markup=kb)
+            kb = types.InlineKeyboardMarkup().add(
+                types.InlineKeyboardButton("🎓 Sertifikatni yuklab olish", url=cert_url)
+            )
+            await message.answer("✅ Sertifikatingiz tayyor:", reply_markup=kb)
     except Exception as e:
         logger.error(f"[mentalaba] offline-test-result yuborishda xato: {e}")
 
