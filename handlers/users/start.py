@@ -2995,7 +2995,7 @@ async def _v2_finish(message: types.Message, state: FSMContext, school_code: str
 
         # create javobi sertifikat PDF yo'lini qaytaradi (masalan
         # "offline_test/<uuid>.pdf"). Userga yuboramiz.
-        cert_path = cert_res.get("data") if isinstance(cert_res, dict) else None
+        cert_path = (cert_res.get("data") or cert_res.get("text") or "") if isinstance(cert_res, dict) else None
         if cert_res.get("ok") and isinstance(cert_path, str) and cert_path.strip():
             base = (MENTALABA_API_BASE or "https://api.mentalaba.uz").rstrip("/")
             cert_url = cert_path if cert_path.startswith("http") else f"{base}/{cert_path.lstrip('/')}"
