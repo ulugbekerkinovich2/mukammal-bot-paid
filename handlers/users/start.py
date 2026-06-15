@@ -2999,10 +2999,24 @@ async def _v2_finish(message: types.Message, state: FSMContext, school_code: str
         if cert_res.get("ok") and isinstance(cert_path, str) and cert_path.strip():
             base = (MENTALABA_API_BASE or "https://api.mentalaba.uz").rstrip("/")
             cert_url = cert_path if cert_path.startswith("http") else f"{base}/{cert_path.lstrip('/')}"
-            kb = types.InlineKeyboardMarkup().add(
-                types.InlineKeyboardButton("🎓 Sertifikatni yuklab olish", url=cert_url)
-            )
-            await message.answer("✅ Sertifikatingiz tayyor:", reply_markup=kb)
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(
+                        cert_url,
+                        headers={"User-Agent": "Mozilla/5.0 (compatible; DTM-Bot/1.0)"},
+                        timeout=aiohttp.ClientTimeout(total=30),
+                    ) as r:
+                        pdf_bytes = await r.read()
+                await message.answer_document(
+                    types.InputFile(io.BytesIO(pdf_bytes), filename="sertifikat.pdf"),
+                    caption="🎓 Sertifikatingiz",
+                )
+            except Exception as doc_err:
+                logger.error(f"[mentalaba] sertifikat fayl yuborilmadi: {doc_err}")
+                kb = types.InlineKeyboardMarkup().add(
+                    types.InlineKeyboardButton("🎓 Sertifikatni yuklab olish", url=cert_url)
+                )
+                await message.answer("✅ Sertifikatingiz tayyor:", reply_markup=kb)
     except Exception as e:
         logger.error(f"[mentalaba] offline-test-result yuborishda xato: {e}")
 
