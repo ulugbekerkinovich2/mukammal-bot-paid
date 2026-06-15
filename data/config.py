@@ -25,6 +25,13 @@ V2_WEBAPP_URL = env.str("V2_WEBAPP_URL", "")
 V2_FOR_ALL = env.bool("V2_FOR_ALL", False)
 # v2 endpoint'lari uchun alohida API host (bo'sh bo'lsa BASE_URL ishlatiladi).
 V2_API_BASE = env.str("V2_API_BASE", "")
+
+# mentalaba offline-test-results API (sertifikat). Natija chiqqach POST qilinadi.
+# Bo'sh API_KEY/BEARER bo'lsa — so'rov yuborilmaydi (xato bermaydi, skip).
+MENTALABA_API_BASE = env.str("MENTALABA_API_BASE", "https://api.mentalaba.uz")
+MENTALABA_API_KEY = env.str("MENTALABA_API_KEY", "")
+MENTALABA_BEARER = env.str("MENTALABA_BEARER", "")
+ADMISSION_YEAR = env.str("ADMISSION_YEAR", "2026")
 # SUBJECTS_MAP = {
 #     "Matematika": {
 #         "id": 20,

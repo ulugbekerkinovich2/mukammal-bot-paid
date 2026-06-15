@@ -775,3 +775,54 @@ def check_user_exists_by_type(chat_id, test_type: str = DEFAULT_TEST_TYPE):
     finally:
         if 'conn' in locals() and conn:
             conn.close()
+
+
+# =========================
+# mentalaba offline-test-results (sertifikat)
+# =========================
+def _mentalaba_headers() -> Dict[str, str]:
+    """api.mentalaba.uz uchun: Bearer JWT + x-api-key."""
+    from data.config import MENTALABA_API_KEY, MENTALABA_BEARER
+    headers: Dict[str, str] = {
+        "accept": "application/json",
+        "content-type": "application/json",
+    }
+    key = (MENTALABA_API_KEY or "").strip()
+    if key:
+        headers["x-api-key"] = key
+    token = (MENTALABA_BEARER or "").strip()
+    if token:
+        headers["Authorization"] = token if token.lower().startswith("bearer ") else f"Bearer {token}"
+    return headers
+
+
+async def create_offline_test_result(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """POST /v1/offline-test-results — natijani mentalaba'ga yuboradi (sertifikat).
+
+    payload majburiy maydonlari (CreateOfflineTestResultDto):
+      full_name, phone, school, primary_subject, secondary_subject,
+      primary_subject_score, secondary_subject_score, mandatory_subject_score,
+      total_score, admission_year.
+
+    Auth (API_KEY/BEARER) sozlanmagan bo'lsa — so'rov yuborilmaydi, skip.
+    """
+    from data.config import MENTALABA_API_BASE, MENTALABA_API_KEY, MENTALABA_BEARER
+
+    if not ((MENTALABA_API_KEY or "").strip() or (MENTALABA_BEARER or "").strip()):
+        logger.warning("[mentalaba] API_KEY/BEARER sozlanmagan — offline-test-results skip")
+        return {"ok": False, "status": 0, "text": "mentalaba auth not configured", "skipped": True}
+
+    base = (MENTALABA_API_BASE or "https://api.mentalaba.uz").rstrip("/")
+    url = f"{base}/v1/offline-test-results"
+    res = await _request_json(
+        "POST", url,
+        json_data=payload,
+        headers=_mentalaba_headers(),
+        timeout_total=DEFAULT_TIMEOUT_SEC,
+        timeout_connect=DEFAULT_CONNECT_SEC,
+    )
+    if res.get("ok"):
+        logger.info("[mentalaba] offline-test-result created: %s", str(res.get("data"))[:300])
+    else:
+        logger.error("[mentalaba] create failed status=%s text=%s", res.get("status"), str(res.get("text"))[:300])
+    return res

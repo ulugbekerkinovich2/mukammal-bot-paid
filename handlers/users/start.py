@@ -36,6 +36,7 @@ from utils.send_req import (
     check_user_exists_by_type,
     normalize_test_type,
     extract_test_type,
+    create_offline_test_result,
     DEFAULT_TEST_TYPE,
     REGISTER_RETRY_TIMEOUT_SEC,
     REGISTER_RETRY_CONNECT_SEC,
@@ -2958,6 +2959,56 @@ async def _v2_finish(message: types.Message, state: FSMContext, school_code: str
         parse_mode="HTML",
         reply_markup=ReplyKeyboardRemove(),
     )
+
+    # mentalaba offline-test-results'ga natijani yuboramiz (sertifikat).
+    # best-effort: xato bo'lsa ham user oqimini buzmaydi.
+    try:
+        from data.config import ADMISSION_YEAR
+
+        def _num(v: Any) -> float:
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                return 0.0
+
+        # Maktab nomi (v2_schools ichidan code bo'yicha), topilmasa code
+        school_name = school_code
+        for s in (data.get("v2_schools") or []):
+            if str(s.get("code") or "").strip() == str(school_code).strip():
+                school_name = s.get("name") or school_code
+                break
+
+        from data.config import MENTALABA_API_BASE
+
+        cert_res = await create_offline_test_result({
+            "full_name": data.get("full_name") or "",
+            "phone": data.get("phone") or "",
+            "school": school_name,
+            "primary_subject": first_label,
+            "secondary_subject": second_label,
+            "primary_subject_score": _num(d.get("primary_ball")),
+            "secondary_subject_score": _num(d.get("secondary_ball")),
+            "mandatory_subject_score": _num(d.get("mandatory_ball")),
+            "total_score": _num(d.get("total_ball")),
+            "admission_year": str(ADMISSION_YEAR),
+        })
+
+        # create javobi sertifikat PDF yo'lini qaytaradi (masalan
+        # "offline_test/<uuid>.pdf"). Userga yuboramiz.
+        cert_path = cert_res.get("data") if isinstance(cert_res, dict) else None
+        if cert_res.get("ok") and isinstance(cert_path, str) and cert_path.strip():
+            base = (MENTALABA_API_BASE or "https://api.mentalaba.uz").rstrip("/")
+            cert_url = cert_path if cert_path.startswith("http") else f"{base}/{cert_path.lstrip('/')}"
+            try:
+                await message.answer_document(cert_url, caption="🎓 Sertifikatingiz")
+            except Exception as doc_err:
+                logger.error(f"[mentalaba] sertifikat fayl yuborilmadi: {doc_err}")
+                kb = types.InlineKeyboardMarkup().add(
+                    types.InlineKeyboardButton("🎓 Sertifikatni yuklab olish", url=cert_url)
+                )
+                await message.answer("Sertifikatingizni quyidagi tugma orqali yuklab oling:", reply_markup=kb)
+    except Exception as e:
+        logger.error(f"[mentalaba] offline-test-result yuborishda xato: {e}")
 
     # PDF botdan yuborilmaydi — backend worker to'liq natija PDF'ini avtomatik
     # yuboradi (doc §5). Dublikat bo'lmasligi uchun bot tugma/fayl yubormaydi.
