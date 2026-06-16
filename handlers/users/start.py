@@ -2448,9 +2448,12 @@ async def _track_start_v2(tg_user) -> None:
 async def on_start_v2(message: types.Message, state: FSMContext) -> None:
     # 0) Kanal obunasini tekshiramiz
     if not await is_subscribed(message.from_user.id, message.bot):
+        kb = types.InlineKeyboardMarkup()
+        kb.add(types.InlineKeyboardButton("✅ Kanalga obuna bo'lish", url=CHANNEL_LINK))
+        kb.add(types.InlineKeyboardButton("🔄 Tekshirish", callback_data="check_sub_v2"))
         await message.answer(
             "Botdan foydalanish uchun rasmiy kanalimizga a'zo bo'ling! ✅",
-            reply_markup=sub_kb()
+            reply_markup=kb,
         )
         return
 
@@ -3270,17 +3273,32 @@ async def pre_choose_online_cb(call: types.CallbackQuery, state: FSMContext):
 async def check_sub(call: types.CallbackQuery, state: FSMContext):
     ok = await is_subscribed(call.from_user.id, call.bot)
     if not ok:
-        await call.answer("Hali obuna emassiz. Avval obuna bo‘ling ✅", show_alert=True)
+        await call.answer("Hali obuna emassiz. Avval obuna bo’ling ✅", show_alert=True)
         return
 
     await call.answer("✅ Obuna tasdiqlandi")
 
-    # Offline o'chirilgan: obunadan keyin darhol online flow'ga o'tkazamiz.
+    # Offline o’chirilgan: obunadan keyin darhol online flow’ga o’tkazamiz.
     try:
         await call.message.delete()
     except Exception:
         pass
     await _start_online_flow_from_message(call.message, state)
+
+
+@dp.callback_query_handler(lambda c: c.data == "check_sub_v2", state="*")
+async def check_sub_v2(call: types.CallbackQuery, state: FSMContext):
+    ok = await is_subscribed(call.from_user.id, call.bot)
+    if not ok:
+        await call.answer("Hali obuna emassiz. Avval obuna bo’ling ✅", show_alert=True)
+        return
+
+    await call.answer("✅ Obuna tasdiqlandi")
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
+    await on_start_v2(call.message, state)
 
 
 @dp.callback_query_handler(lambda c: c.data == "show_my_result_callback", state="*")
