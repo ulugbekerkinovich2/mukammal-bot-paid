@@ -2963,8 +2963,7 @@ async def _v2_finish(message: types.Message, state: FSMContext, school_code: str
     # Test natijasi PDF (v2 complete javobidan)
     await _v2_send_pdf_button(message, d)
 
-    # mentalaba offline-test-results'ga natijani yuboramiz (sertifikat).
-    # best-effort: xato bo'lsa ham user oqimini buzmaydi.
+    # mentalaba offline-test-results'ga natijani yuboramiz (saqlash uchun, sertifikat userga yuborilmaydi).
     try:
         from data.config import ADMISSION_YEAR
 
@@ -2974,16 +2973,13 @@ async def _v2_finish(message: types.Message, state: FSMContext, school_code: str
             except (TypeError, ValueError):
                 return 0.0
 
-        # Maktab nomi (v2_schools ichidan code bo'yicha), topilmasa code
         school_name = school_code
         for s in (data.get("v2_schools") or []):
             if str(s.get("code") or "").strip() == str(school_code).strip():
                 school_name = s.get("name") or school_code
                 break
 
-        from data.config import MENTALABA_API_BASE
-
-        cert_res = await create_offline_test_result({
+        await create_offline_test_result({
             "full_name": data.get("full_name") or "",
             "phone": data.get("phone") or "",
             "school": school_name,
@@ -2995,31 +2991,6 @@ async def _v2_finish(message: types.Message, state: FSMContext, school_code: str
             "total_score": _num(d.get("total_ball")),
             "admission_year": str(ADMISSION_YEAR),
         })
-
-        # create javobi sertifikat PDF yo'lini qaytaradi (masalan
-        # "offline_test/<uuid>.pdf"). Userga yuboramiz.
-        cert_path = (cert_res.get("data") or cert_res.get("text") or "") if isinstance(cert_res, dict) else None
-        if cert_res.get("ok") and isinstance(cert_path, str) and cert_path.strip():
-            base = (MENTALABA_API_BASE or "https://api.mentalaba.uz").rstrip("/")
-            cert_url = cert_path if cert_path.startswith("http") else f"{base}/{cert_path.lstrip('/')}"
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(
-                        cert_url,
-                        headers={"User-Agent": "Mozilla/5.0 (compatible; DTM-Bot/1.0)"},
-                        timeout=aiohttp.ClientTimeout(total=30),
-                    ) as r:
-                        pdf_bytes = await r.read()
-                await message.answer_document(
-                    types.InputFile(io.BytesIO(pdf_bytes), filename="sertifikat.pdf"),
-                    caption="🎓 Sertifikatingiz",
-                )
-            except Exception as doc_err:
-                logger.error(f"[mentalaba] sertifikat fayl yuborilmadi: {doc_err}")
-                kb = types.InlineKeyboardMarkup().add(
-                    types.InlineKeyboardButton("🎓 Sertifikatni yuklab olish", url=cert_url)
-                )
-                await message.answer("✅ Sertifikatingiz tayyor:", reply_markup=kb)
     except Exception as e:
         logger.error(f"[mentalaba] offline-test-result yuborishda xato: {e}")
 
