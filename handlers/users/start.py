@@ -2960,9 +2960,6 @@ async def _v2_finish(message: types.Message, state: FSMContext, school_code: str
         reply_markup=ReplyKeyboardRemove(),
     )
 
-    # Test natijasi PDF (v2 complete javobidan)
-    await _v2_send_pdf_button(message, d)
-
     # mentalaba offline-test-results'ga natijani yuboramiz (saqlash uchun, sertifikat userga yuborilmaydi).
     try:
         from data.config import ADMISSION_YEAR
