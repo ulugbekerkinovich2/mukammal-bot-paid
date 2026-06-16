@@ -2228,29 +2228,54 @@ def _v2_name_to_mt(subjects: List[Dict[str, Any]]) -> Dict[str, int]:
     return m
 
 
+_V2_ORDERED_PAIRS = [
+    ("Matematika",            "Ingliz tili"),
+    ("Matematika",            "Fizika"),
+    ("Matematika",            "Ona tili va adabiyoti"),
+    ("Biologiya",             "Kimyo"),
+    ("Biologiya",             "Ona tili va adabiyoti"),
+    ("Ingliz tili",           "Ona tili va adabiyoti"),
+    ("Ona tili va adabiyoti", "Matematika"),
+    ("Huquq",                 "Ingliz tili"),
+    ("Kimyo",                 "Biologiya"),
+    ("Kimyo",                 "Matematika"),
+    ("Tarix",                 "Ingliz tili"),
+    ("Tarix",                 "Ona tili va adabiyoti"),
+    ("Tarix",                 "Geografiya"),
+    ("Fizika",                "Matematika"),
+    ("Fizika",                "Ingliz tili"),
+]
+
+_V2_NAME_ALIASES = {
+    "ona tili va adabiyoti": "ona tili va adabiyot",
+    "huquq":                 "davlat va huquq asoslari",
+}
+
+
+def _v2_lookup_mt(name2mt: Dict[str, int], name: str) -> Optional[int]:
+    norm = _v2_norm(name)
+    mt = name2mt.get(norm)
+    if mt is None:
+        mt = name2mt.get(_V2_NAME_ALIASES.get(norm, norm))
+    return mt
+
+
 def _v2_pairs_kb(subjects: List[Dict[str, Any]]) -> Tuple[types.InlineKeyboardMarkup, int]:
-    """SUBJECTS_MAP 'relative' juftliklari -> bitta ro'yxatli kombinatsiya tugmalari.
-    Backend mt_id'ga nom bo'yicha bog'lanadi. Mos kelmaganlari tashlanadi."""
+    """Aniq tartibdagi juftliklar ro'yxati — _V2_ORDERED_PAIRS."""
     name2mt = _v2_name_to_mt(subjects)
     kb = types.InlineKeyboardMarkup(row_width=1)
-    seen = set()
-    for first_uz, info in SUBJECTS_MAP.items():
-        first_mt = name2mt.get(_v2_norm(first_uz))
-        if first_mt is None:
+    count = 0
+    for first_uz, second_uz in _V2_ORDERED_PAIRS:
+        first_mt = _v2_lookup_mt(name2mt, first_uz)
+        second_mt = _v2_lookup_mt(name2mt, second_uz)
+        if first_mt is None or second_mt is None:
             continue
-        for second_uz in info.get("relative", {}).get("uz", []) or []:
-            second_mt = name2mt.get(_v2_norm(second_uz))
-            if second_mt is None:
-                continue
-            key = (first_mt, second_mt)
-            if key in seen:
-                continue
-            seen.add(key)
-            kb.add(types.InlineKeyboardButton(
-                f"{first_uz} — {second_uz}",
-                callback_data=f"v2pair:{first_mt}|{second_mt}",
-            ))
-    return kb, len(seen)
+        kb.add(types.InlineKeyboardButton(
+            f"{first_uz} — {second_uz}",
+            callback_data=f"v2pair:{first_mt}|{second_mt}",
+        ))
+        count += 1
+    return kb, count
 
 
 def _v2_pdf_url(d: Dict[str, Any]) -> Optional[str]:
