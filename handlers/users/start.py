@@ -2318,9 +2318,13 @@ async def _v2_send_pdf_document(message: types.Message, url: str) -> bool:
             return False
         bio = io.BytesIO(content)
         bio.name = "natija.pdf"
+        cert_kb = types.InlineKeyboardMarkup().add(
+            types.InlineKeyboardButton("🎓 Sertifikatni yuklab olish", url="https://mentalaba.uz/auth?sign-in")
+        )
         await message.answer_document(
             types.InputFile(bio, filename="natija.pdf"),
             caption="📄 Natijangiz (PDF)",
+            reply_markup=cert_kb,
         )
         return True
     except Exception as e:
