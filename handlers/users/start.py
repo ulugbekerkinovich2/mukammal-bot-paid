@@ -2352,13 +2352,9 @@ async def _v2_send_pdf_button(message: types.Message, d: Dict[str, Any]) -> None
             u = _v2_pdf_url(dd)
             if u:
                 try:
-                    await placeholder.edit_text(
-                        "To'liq natijangizni quyidagi tugma orqali oching:",
-                        reply_markup=_v2_pdf_button_kb(u),
-                    )
+                    await placeholder.delete()
                 except Exception:
-                    await message.answer("To'liq natijangizni quyidagi tugma orqali oching:",
-                                         reply_markup=_v2_pdf_button_kb(u))
+                    pass
                 await _v2_send_pdf_document(message, u)
                 return
         # progress yangilash (matn har safar farqli — "not modified" bo'lmasin)
