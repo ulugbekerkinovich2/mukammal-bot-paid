@@ -2334,8 +2334,6 @@ async def _v2_send_pdf_button(message: types.Message, d: Dict[str, Any]) -> None
     placeholder'ni yangilab turadi (progress)."""
     url = _v2_pdf_url(d)
     if url:
-        await message.answer("To'liq natijangizni quyidagi tugma orqali oching:",
-                             reply_markup=_v2_pdf_button_kb(url))
         await _v2_send_pdf_document(message, url)
         return
 
