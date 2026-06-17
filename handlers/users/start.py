@@ -2469,16 +2469,16 @@ async def _track_start_v2(tg_user) -> None:
 
 
 async def on_start_v2(message: types.Message, state: FSMContext) -> None:
-    # 0) Kanal obunasini tekshiramiz
-    if not await is_subscribed(message.from_user.id, message.bot):
-        kb = types.InlineKeyboardMarkup()
-        kb.add(types.InlineKeyboardButton("✅ Kanalga obuna bo'lish", url=CHANNEL_LINK))
-        kb.add(types.InlineKeyboardButton("🔄 Tekshirish", callback_data="check_sub_v2"))
-        await message.answer(
-            "Botdan foydalanish uchun rasmiy kanalimizga a'zo bo'ling! ✅",
-            reply_markup=kb,
-        )
-        return
+    # 0) Kanal obunasini tekshiramiz (vaqtincha o'chirildi)
+    # if not await is_subscribed(message.from_user.id, message.bot):
+    #     kb = types.InlineKeyboardMarkup()
+    #     kb.add(types.InlineKeyboardButton("✅ Kanalga obuna bo'lish", url=CHANNEL_LINK))
+    #     kb.add(types.InlineKeyboardButton("🔄 Tekshirish", callback_data="check_sub_v2"))
+    #     await message.answer(
+    #         "Botdan foydalanish uchun rasmiy kanalimizga a'zo bo'ling! ✅",
+    #         reply_markup=kb,
+    #     )
+    #     return
 
     # 1) tracking (best-effort, bloklamaydi)
     await _track_start_v2(message.from_user)
