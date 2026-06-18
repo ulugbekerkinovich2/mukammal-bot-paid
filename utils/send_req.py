@@ -6,7 +6,7 @@ import random
 import aiohttp
 import psycopg2
 from dotenv import load_dotenv
-from data.config import SECRET_KEY, BASE_URL
+from data.config import SECRET_KEY, BASE_URL, BASE_URL_2
 from urllib.parse import quote  # (qolaversin, ishlatsang kerak bo‘ladi)
 
 load_dotenv()
@@ -47,6 +47,46 @@ def extract_test_type(obj: Any) -> str:
 # =========================
 MAIN_URL = os.getenv("REGISTER_URL", "https://dtm-api.misterdev.uz/api/v1/auth/register").strip()
 BASE_API_URL = os.getenv("BASE_URL", "https://dtm-api.misterdev.uz/api/v1").strip()
+
+# =========================
+# LOAD BALANCER (round-robin + failover)
+# =========================
+_LB_BACKENDS: list = [
+    u.rstrip("/") for u in [BASE_URL, BASE_URL_2] if u and u.strip()
+]
+_lb_counter: int = 0
+
+
+def _next_backend() -> str:
+    global _lb_counter
+    if not _LB_BACKENDS:
+        return BASE_API_URL
+    url = _LB_BACKENDS[_lb_counter % len(_LB_BACKENDS)]
+    _lb_counter += 1
+    return url
+
+
+async def _request_json_lb(
+    method: str,
+    path: str,
+    **kwargs,
+) -> Dict[str, Any]:
+    """Round-robin + failover. path = "/dtm/online/v2/complete" kabi.
+    Birinchi backend ishlamasa avtomatik ikkinchisiga o'tadi."""
+    backends = _LB_BACKENDS if _LB_BACKENDS else [BASE_API_URL]
+    start = _lb_counter % len(backends)
+    last_res: Dict[str, Any] = {}
+    for i in range(len(backends)):
+        base = backends[(start + i) % len(backends)]
+        url = base.rstrip("/") + "/" + path.lstrip("/")
+        res = await _request_json(method, url, **kwargs)
+        if res.get("ok") or res.get("status", 0) < 500:
+            global _lb_counter
+            _lb_counter = start + i + 1
+            return res
+        last_res = res
+        logger.warning("[lb] backend %s failed status=%s, trying next", base, res.get("status"))
+    return last_res
 
 ADS_BOTS = os.getenv("ADS_BOTS", "https://ads.misterdev.uz/bots/get").strip()
 ADS_USERS = os.getenv("ADS_USERS", "https://ads.misterdev.uz/users/get").strip()
@@ -249,9 +289,9 @@ async def register_user(
         f"======================================\n"
     )
 
-    res = await _request_json(
+    res = await _request_json_lb(
         "POST",
-        MAIN_URL,
+        "/auth/register",
         json_data=payload,
         headers={"Content-Type": "application/json"},
         retries=retries,
@@ -640,25 +680,21 @@ async def get_dtm_result(document_code):
     Yangi API orqali natijani olib beradi.
     GET /api/v1/dtm/result/{document_code}
     """
-    from data.config import BASE_URL
     import os
-    import aiohttp
-    
+
     secret_key = os.getenv("SECRET_KEY", "K0yKC4LYBnCNLncjE5BH57i13yZIBhaT")
-    url = f"{BASE_URL}/dtm/result/by_chat/{document_code}"
     headers = {
         "x-api-key": secret_key,
         "accept": "application/json"
     }
-    
+
     logger.info(
         f"\n\n========== RESULT REQUEST ==========\n"
         f"CHAT_ID: {document_code}\n"
-        f"URL: {url}\n"
         f"====================================\n"
     )
-    
-    res = await _request_json("GET", url, headers=headers)
+
+    res = await _request_json_lb("GET", f"/dtm/result/by_chat/{document_code}", headers=headers)
     
     logger.info(
         f"\n\n========== RESULT RESPONSE ==========\n"
