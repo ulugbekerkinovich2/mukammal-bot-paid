@@ -73,6 +73,7 @@ async def _request_json_lb(
 ) -> Dict[str, Any]:
     """Round-robin + failover. path = "/dtm/online/v2/complete" kabi.
     Birinchi backend ishlamasa avtomatik ikkinchisiga o'tadi."""
+    global _lb_counter
     backends = _LB_BACKENDS if _LB_BACKENDS else [BASE_API_URL]
     start = _lb_counter % len(backends)
     last_res: Dict[str, Any] = {}
@@ -84,7 +85,6 @@ async def _request_json_lb(
         # 0 = network error (server down), 5xx = server error → keyingisiga o't
         # 2xx yoki 4xx (client error) → qaytaramiz
         if res.get("ok") or (0 < status < 500):
-            global _lb_counter
             _lb_counter = start + i + 1
             return res
         last_res = res
