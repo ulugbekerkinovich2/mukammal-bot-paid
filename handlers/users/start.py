@@ -627,32 +627,28 @@ async def edit_clean(call: types.CallbackQuery, state: FSMContext, text: str, re
 # ----------------------------
 async def _api_get(url: str, params: Dict[str, str]) -> Dict[str, Any]:
     timeout = aiohttp.ClientTimeout(total=60)
-    logger.info(f"API REQUEST -> {url} params={params}")
-
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(url, params=params) as r:
-                logger.info(f"API RESPONSE STATUS -> {r.status}")
                 text = await r.text()
 
                 if r.status >= 400:
-                    logger.error(f"API ERROR -> {text[:500]}")
+                    logger.error("[api_get] failed status=%s", r.status)
                     return {"ok": False, "status": r.status, "text": text}
 
                 try:
                     data = await r.json()
-                    logger.info("API JSON parsed successfully")
                     return data
                 except Exception:
-                    logger.error("API JSON parse error")
+                    logger.error("[api_get] json parse error status=%s", r.status)
                     return {"ok": False, "status": r.status, "text": text}
 
     except asyncio.TimeoutError:
-        logger.error(f"API TIMEOUT -> {url}")
-        return {"ok": False, "status": 504, "text": "TimeoutError"}
+        logger.error("[api_get] timeout")
+        return {"ok": False, "status": 504, "text": "timeout"}
 
     except aiohttp.ClientError as e:
-        logger.error(f"NETWORK ERROR -> {repr(e)}")
+        logger.error("[api_get] network error: %s", type(e).__name__)
         return {"ok": False, "status": 503, "text": str(e)}
 
 async def fetch_regions() -> Dict[str, Any]:

@@ -284,13 +284,7 @@ async def register_user(
     timeout_total = int(timeout_total or REGISTER_TIMEOUT_SEC)
     timeout_connect = int(timeout_connect or REGISTER_CONNECT_SEC)
 
-    logger.info(
-        f"\n\n========== REGISTER REQUEST ==========\n"
-        f"URL: {MAIN_URL}\n"
-        f"PAYLOAD: {payload}\n"
-        f"TIMEOUT: {timeout_total} CONNECT: {timeout_connect} RETRIES: {retries}\n"
-        f"======================================\n"
-    )
+    logger.info(f"[register] request phone={payload.get('phone')} school_code={payload.get('school_code')} test_type={payload.get('test_type')} timeout={timeout_total} connect={timeout_connect} retries={retries}")
 
     res = await _request_json_lb(
         "POST",
@@ -302,11 +296,7 @@ async def register_user(
         timeout_connect=timeout_connect,
     )
 
-    logger.info(
-        f"\n\n========== REGISTER RESPONSE ==========\n"
-        f"RESPONSE: {res}\n"
-        f"=======================================\n"
-    )
+    logger.info(f"[register] response ok={res.get('ok')} status={res.get('status')}" + (f" text={str(res.get('text',''))[:100]}" if not res.get('ok') else ""))
 
     return res
 
@@ -657,25 +647,26 @@ async def submit_dtm_read(image_bytes: bytes, filename: str, book_id: str, conte
                 except Exception:
                     data = None
 
-                logger.info(f"[DTM_READ] RESPONSE status={r.status} body={text[:500]}")
-
                 if r.status >= 400:
+                    logger.error("[DTM_READ] failed status=%s", r.status)
                     return {"ok": False, "status": r.status, "text": text, "data": data}
 
+                logger.info("[DTM_READ] ok status=%s", r.status)
                 return {
                     "ok": True,
                     "status": r.status,
                     "data": data,
                     "text": text,
                 }
-    except asyncio.TimeoutError as e:
-        logger.error(f"[DTM_READ] TIMEOUT {repr(e)}")
-        return {"ok": False, "status": 0, "text": f"TimeoutError(): {repr(e)}", "data": None}
+    except asyncio.TimeoutError:
+        logger.error("[DTM_READ] timeout — server javob bermadi")
+        return {"ok": False, "status": 0, "text": "timeout", "data": None}
     except aiohttp.ClientError as e:
-        logger.error(f"[DTM_READ] CLIENT_ERROR {repr(e)}")
-        return {"ok": False, "status": 0, "text": f"ClientError(): {repr(e)}", "data": None}
+        logger.error("[DTM_READ] network error: %s", type(e).__name__)
+        return {"ok": False, "status": 0, "text": f"network error: {type(e).__name__}", "data": None}
     except Exception as e:
-        return {"ok": False, "status": 0, "text": f"Exception(): {repr(e)}", "data": None}
+        logger.error("[DTM_READ] unexpected error: %s", type(e).__name__)
+        return {"ok": False, "status": 0, "text": f"error: {type(e).__name__}", "data": None}
 
 
 async def get_dtm_result(document_code):
@@ -689,19 +680,11 @@ async def get_dtm_result(document_code):
         "accept": "application/json"
     }
 
-    logger.info(
-        f"\n\n========== RESULT REQUEST ==========\n"
-        f"CHAT_ID: {document_code}\n"
-        f"====================================\n"
-    )
+    logger.info(f"[get_dtm_result] request document_code={document_code}")
 
     res = await _request_json_lb("GET", f"/dtm/result/by_chat/{document_code}", headers=headers)
     
-    logger.info(
-        f"\n\n========== RESULT RESPONSE ==========\n"
-        f"RESPONSE: {res}\n"
-        f"=====================================\n"
-    )
+    logger.info(f"[get_dtm_result] response ok={res.get('ok')} status={res.get('status')}")
     return res
 
 
