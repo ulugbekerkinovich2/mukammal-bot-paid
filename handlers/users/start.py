@@ -2228,27 +2228,37 @@ def _v2_name_to_mt(subjects: List[Dict[str, Any]]) -> Dict[str, int]:
     return m
 
 
+# (uz_first, uz_second, ru_first, ru_second)
 _V2_ORDERED_PAIRS = [
-    ("Matematika",            "Ingliz tili"),
-    ("Matematika",            "Fizika"),
-    ("Matematika",            "Ona tili va adabiyoti"),
-    ("Biologiya",             "Kimyo"),
-    ("Biologiya",             "Ona tili va adabiyoti"),
-    ("Ingliz tili",           "Ona tili va adabiyoti"),
-    ("Ona tili va adabiyoti", "Matematika"),
-    ("Huquq",                 "Ingliz tili"),
-    ("Kimyo",                 "Biologiya"),
-    ("Kimyo",                 "Matematika"),
-    ("Tarix",                 "Ingliz tili"),
-    ("Tarix",                 "Ona tili va adabiyoti"),
-    ("Tarix",                 "Geografiya"),
-    ("Fizika",                "Matematika"),
-    ("Fizika",                "Ingliz tili"),
+    ("Matematika",            "Ingliz tili",           "Математика",                  "Английский язык"),
+    ("Matematika",            "Fizika",                "Математика",                  "Физика"),
+    ("Matematika",            "Ona tili va adabiyoti", "Математика",                  "Русский язык и литература"),
+    ("Biologiya",             "Kimyo",                 "Биология",                    "Химия"),
+    ("Biologiya",             "Ona tili va adabiyoti", "Биология",                    "Русский язык и литература"),
+    ("Ingliz tili",           "Ona tili va adabiyoti", "Английский язык",             "Русский язык и литература"),
+    ("Ona tili va adabiyoti", "Matematika",            "Русский язык и литература",   "Математика"),
+    ("Huquq",                 "Ingliz tili",           "Право",                       "Английский язык"),
+    ("Kimyo",                 "Biologiya",             "Химия",                       "Биология"),
+    ("Kimyo",                 "Matematika",            "Химия",                       "Математика"),
+    ("Tarix",                 "Ingliz tili",           "История",                     "Английский язык"),
+    ("Tarix",                 "Ona tili va adabiyoti", "История",                     "Русский язык и литература"),
+    ("Tarix",                 "Geografiya",            "История",                     "География"),
+    ("Fizika",                "Matematika",            "Физика",                      "Математика"),
+    ("Fizika",                "Ingliz tili",           "Физика",                      "Английский язык"),
 ]
 
 _V2_NAME_ALIASES = {
-    "ona tili va adabiyoti": "ona tili va adabiyot",
-    "huquq":                 "davlat va huquq asoslari",
+    "ona tili va adabiyoti":       "ona tili va adabiyot",
+    "huquq":                       "davlat va huquq asoslari",
+    "русский язык и литература":   "ona tili va adabiyot",
+    "право":                       "davlat va huquq asoslari",
+    "история":                     "tarix",
+    "география":                   "geografiya",
+    "математика":                  "matematika",
+    "физика":                      "fizika",
+    "химия":                       "kimyo",
+    "биология":                    "biologiya",
+    "английский язык":             "ingliz tili",
 }
 
 
@@ -2256,22 +2266,26 @@ def _v2_lookup_mt(name2mt: Dict[str, int], name: str) -> Optional[int]:
     norm = _v2_norm(name)
     mt = name2mt.get(norm)
     if mt is None:
-        mt = name2mt.get(_V2_NAME_ALIASES.get(norm, norm))
+        alias = _V2_NAME_ALIASES.get(norm)
+        if alias:
+            mt = name2mt.get(_v2_norm(alias))
     return mt
 
 
-def _v2_pairs_kb(subjects: List[Dict[str, Any]]) -> Tuple[types.InlineKeyboardMarkup, int]:
-    """Aniq tartibdagi juftliklar ro'yxati — _V2_ORDERED_PAIRS."""
+def _v2_pairs_kb(subjects: List[Dict[str, Any]], lang: str = "uz") -> Tuple[types.InlineKeyboardMarkup, int]:
+    """Aniq tartibdagi juftliklar — tanlangan tilda."""
     name2mt = _v2_name_to_mt(subjects)
     kb = types.InlineKeyboardMarkup(row_width=1)
     count = 0
-    for first_uz, second_uz in _V2_ORDERED_PAIRS:
-        first_mt = _v2_lookup_mt(name2mt, first_uz)
-        second_mt = _v2_lookup_mt(name2mt, second_uz)
+    for uz_first, uz_second, ru_first, ru_second in _V2_ORDERED_PAIRS:
+        first_label  = ru_first  if lang == "ru" else uz_first
+        second_label = ru_second if lang == "ru" else uz_second
+        first_mt = _v2_lookup_mt(name2mt, uz_first) or _v2_lookup_mt(name2mt, ru_first)
+        second_mt = _v2_lookup_mt(name2mt, uz_second) or _v2_lookup_mt(name2mt, ru_second)
         if first_mt is None or second_mt is None:
             continue
         kb.add(types.InlineKeyboardButton(
-            f"{first_uz} — {second_uz}",
+            f"{first_label} — {second_label}",
             callback_data=f"v2pair:{first_mt}|{second_mt}",
         ))
         count += 1
@@ -2514,13 +2528,14 @@ async def _v2_show_subjects(message: types.Message, state: FSMContext, *, edit: 
     data = await state.get_data()
     subjects = data.get("v2_subjects") or []
 
-    pairs_kb, n_pairs = _v2_pairs_kb(subjects)
+    lang = data.get("exam_lang") or "uz"
+    pairs_kb, n_pairs = _v2_pairs_kb(subjects, lang)
     if n_pairs:
-        text = "Fan kombinatsiyangizni tanlang:"
+        text = "Fan kombinatsiyangizni tanlang:" if lang != "ru" else "Выберите комбинацию предметов:"
         kb = pairs_kb
     else:
         # Fallback: kombinatsiya tuzib bo'lmasa — 2 bosqichli tanlov
-        text = "Birinchi (majburiy) faningizni tanlang:"
+        text = "Birinchi (majburiy) faningizni tanlang:" if lang != "ru" else "Выберите первый предмет:"
         kb = _v2_subjects_kb(subjects, "v2s1")
 
     if edit:
