@@ -411,6 +411,46 @@ EXAM_LANG_LABELS = {
 def tr(ui_lang: str, key: str) -> str:
     return TEXTS.get(key, {}).get(ui_lang, TEXTS.get(key, {}).get("uz", ""))
 
+V2_TEXTS = {
+    "subjects_choose":        {"uz": "Fan kombinatsiyangizni tanlang:",              "ru": "Выберите комбинацию предметов:"},
+    "subjects_choose_first":  {"uz": "Birinchi (majburiy) faningizni tanlang:",       "ru": "Выберите первый предмет:"},
+    "subjects_choose_second": {"uz": "Ikkinchi (tanlov) faningizni tanlang:",          "ru": "Выберите второй предмет:"},
+    "subject_not_found":      {"uz": "Fan topilmadi",                                  "ru": "Предмет не найден"},
+    "pair_not_found":         {"uz": "Kombinatsiya topilmadi",                         "ru": "Комбинация не найдена"},
+    "first_subject_selected": {"uz": "✅ 1-fan: <b>{}</b>\n\nIkkinchi (tanlov) faningizni tanlang:", "ru": "✅ 1-й предмет: <b>{}</b>\n\nВыберите второй предмет:"},
+    "test_submitted":         {"uz": "✅ Test topshirildi!\n\nNatijangizni ko'rish uchun ma'lumotlaringizni kiriting.", "ru": "✅ Тест сдан!\n\nВведите данные для просмотра результата."},
+    "enter_phone_btn":        {"uz": "📞 Raqamni yuborish",                            "ru": "📞 Отправить номер"},
+    "enter_fio":              {"uz": "Familiya Ism kiriting:\nNamuna: Erkinov Ulugbek", "ru": "Введите Фамилию Имя:\nПример: Эркинов Улугбек"},
+    "enter_school_code":      {"uz": "Maktab kodini kiriting (masalan: SHAY186):",     "ru": "Введите код школы (например: SHAY186):"},
+    "school_not_found":       {"uz": "❌ Maktab kodi topilmadi. Qayta kiriting (masalan: SHAY186):", "ru": "❌ Код школы не найден. Введите снова (например: SHAY186):"},
+    "choose_gender":          {"uz": "🚻 Jinsingizni tanlang:",                        "ru": "🚻 Выберите пол:"},
+    "gender_male":            {"uz": "👦 Erkak",                                       "ru": "👦 Мужской"},
+    "gender_female":          {"uz": "👧 Ayol",                                        "ru": "👧 Женский"},
+    "choose_region":          {"uz": "🌍 Viloyatingizni tanlang:",                     "ru": "🌍 Выберите область:"},
+    "choose_district":        {"uz": "🏙 Tumaningizni tanlang:",                       "ru": "🏙 Выберите район:"},
+    "region_label":           {"uz": "🌍 Viloyat: <b>{}</b>\n\n🏙 Tumaningizni tanlang:", "ru": "🌍 Область: <b>{}</b>\n\n🏙 Выберите район:"},
+    "district_label":         {"uz": "🏙 Tuman: <b>{}</b>\n\n🏫 Maktabingizni tanlang:", "ru": "🏙 Район: <b>{}</b>\n\n🏫 Выберите школу:"},
+    "choose_school":          {"uz": "🏫 Maktabingizni tanlang:",                      "ru": "🏫 Выберите школу:"},
+    "no_districts":           {"uz": "🏫 Tumanlar topilmadi. Maktab kodingizni kiriting:", "ru": "🏫 Районы не найдены. Введите код школы:"},
+    "no_schools":             {"uz": "🏫 Bu tumanda maktab topilmadi. Maktab kodingizni kiriting:", "ru": "🏫 В этом районе школы не найдены. Введите код школы:"},
+    "please_wait":            {"uz": "⏳ Iltimos, kuting…",                            "ru": "⏳ Пожалуйста, подождите…"},
+    "back_btn":               {"uz": "⬅️ Orqaga",                                     "ru": "⬅️ Назад"},
+    "test_start_btn":         {"uz": "📝 Testni boshlash",                             "ru": "📝 Начать тест"},
+    "test_done_btn":          {"uz": "✅ Testni tugatdim",                             "ru": "✅ Завершить тест"},
+    "ready_msg":              {"uz": "Tayyor! <b>📝 Testni boshlash</b> tugmasi orqali testni boshlang.\nTest tugagach, <b>✅ Testni tugatdim</b> tugmasini bosing — natijangizni ko'rish uchun ma'lumotlaringizni so'raymiz.", "ru": "Готово! Нажмите <b>📝 Начать тест</b> для начала теста.\nПо завершении нажмите <b>✅ Завершить тест</b> — мы запросим данные для просмотра результата."},
+    "selected_subjects":      {"uz": "✅ Tanlangan fanlar: <b>{} — {}</b>",           "ru": "✅ Выбранные предметы: <b>{} — {}</b>"},
+    "result_header":          {"uz": "<b>Test natijasi:</b>",                          "ru": "<b>Результат теста:</b>"},
+    "result_mandatory":       {"uz": "- Majburiy fanlar: {} / 33",                    "ru": "- Обязательные: {} / 33"},
+    "result_total":           {"uz": "Jami: <b>{} ball</b>",                          "ru": "Итого: <b>{} балл</b>"},
+    "test_not_found":         {"uz": "❌ Test topilmadi. /start v2 bilan qaytadan boshlang.", "ru": "❌ Тест не найден. Начните заново с /start v2."},
+    "result_error":           {"uz": "❌ Natijani olishda xatolik ({}). Keyinroq urinib ko'ring.", "ru": "❌ Ошибка получения результата ({}). Попробуйте позже."},
+    "subject_error":          {"uz": "❌ Fan tanlovida xatolik. /start v2 bilan qayta urinib ko'ring.", "ru": "❌ Ошибка выбора предмета. Попробуйте /start v2 снова."},
+    "test_error":             {"uz": "❌ Test tayyorlashda xatolik ({}).",             "ru": "❌ Ошибка подготовки теста ({})."},
+}
+
+def v2_tr(lang: str, key: str) -> str:
+    return V2_TEXTS.get(key, {}).get(lang) or V2_TEXTS.get(key, {}).get("uz", "")
+
 def lbl(ui_lang: str, key: str) -> str:
     return CONF_LABELS.get(key, {}).get(ui_lang, CONF_LABELS.get(key, {}).get("uz", key))
 
@@ -2431,13 +2471,14 @@ async def _v2_begin_test(call: types.CallbackQuery, state: FSMContext,
     if call.from_user.username:
         payload["username"] = call.from_user.username
 
+    lang = data.get("exam_lang") or "uz"
     res = await _v2_api_post("/dtm/online/v2/start", payload)
     if not res.get("ok"):
         txt = str(res.get("text") or "")
         if res.get("status") == 400 and "subject" in txt.lower():
-            await call.message.answer("❌ Fan tanlovida xatolik. /start v2 bilan qayta urinib ko'ring.")
+            await call.message.answer(v2_tr(lang, "subject_error"))
         else:
-            await call.message.answer(f"❌ Test tayyorlashda xatolik ({res.get('status')}). Keyinroq urinib ko'ring.")
+            await call.message.answer(v2_tr(lang, "test_error").format(res.get("status")))
         await state.finish()
         return
 
@@ -2446,26 +2487,24 @@ async def _v2_begin_test(call: types.CallbackQuery, state: FSMContext,
     # tugmasi forma bosqichini qo'lda boshlaydi (v2_done_btn).
     kb = types.InlineKeyboardMarkup(row_width=1)
     kb.add(types.InlineKeyboardButton(
-        text="📝 Testni boshlash",
+        text=v2_tr(lang, "test_start_btn"),
         web_app=types.WebAppInfo(url=v2_webapp_url(call.from_user.id, data.get("exam_lang") or "uz")),
     ))
     kb.add(types.InlineKeyboardButton(
-        text="✅ Testni tugatdim",
+        text=v2_tr(lang, "test_done_btn"),
         callback_data="v2done",
     ))
 
     await OnlineV2.in_test.set()
     try:
         await call.message.edit_text(
-            f"✅ Tanlangan fanlar: <b>{first_name} — {second_name}</b>",
+            v2_tr(lang, "selected_subjects").format(first_name, second_name),
             parse_mode="HTML",
         )
     except Exception:
         pass
     tayyor = await call.message.answer(
-        "Tayyor! <b>📝 Testni boshlash</b> tugmasi orqali testni boshlang.\n"
-        "Test tugagach, <b>✅ Testni tugatdim</b> tugmasini bosing — "
-        "natijangizni ko'rish uchun ma'lumotlaringizni so'raymiz.",
+        v2_tr(lang, "ready_msg"),
         parse_mode="HTML",
         reply_markup=kb,
     )
@@ -2531,11 +2570,11 @@ async def _v2_show_subjects(message: types.Message, state: FSMContext, *, edit: 
     lang = data.get("exam_lang") or "uz"
     pairs_kb, n_pairs = _v2_pairs_kb(subjects, lang)
     if n_pairs:
-        text = "Fan kombinatsiyangizni tanlang:" if lang != "ru" else "Выберите комбинацию предметов:"
+        text = v2_tr(lang, "subjects_choose")
         kb = pairs_kb
     else:
         # Fallback: kombinatsiya tuzib bo'lmasa — 2 bosqichli tanlov
-        text = "Birinchi (majburiy) faningizni tanlang:" if lang != "ru" else "Выберите первый предмет:"
+        text = v2_tr(lang, "subjects_choose_first")
         kb = _v2_subjects_kb(subjects, "v2s1")
 
     if edit:
@@ -2561,14 +2600,15 @@ async def v2_pick_lang(call: types.CallbackQuery, state: FSMContext):
 @dp.callback_query_handler(lambda c: c.data and c.data.startswith("v2pair:"), state=OnlineV2.first_subject)
 async def v2_pick_pair(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
+    data = await state.get_data()
+    lang = data.get("exam_lang") or "uz"
     try:
         raw = call.data.split(":", 1)[1]
         first_id, second_id = (int(x) for x in raw.split("|", 1))
     except Exception:
-        await call.answer("Kombinatsiya topilmadi", show_alert=True)
+        await call.answer(v2_tr(lang, "pair_not_found"), show_alert=True)
         return
 
-    data = await state.get_data()
     subjects = data.get("v2_subjects") or []
     first_name = _v2_name_by_id(subjects, first_id)
     second_name = _v2_name_by_id(subjects, second_id)
@@ -2582,13 +2622,14 @@ async def v2_pick_pair(call: types.CallbackQuery, state: FSMContext):
 @dp.callback_query_handler(lambda c: c.data and c.data.startswith("v2s1:"), state=OnlineV2.first_subject)
 async def v2_pick_first(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
+    data = await state.get_data()
+    lang = data.get("exam_lang") or "uz"
     try:
         first_id = int(call.data.split(":", 1)[1])
     except Exception:
-        await call.answer("Fan topilmadi", show_alert=True)
+        await call.answer(v2_tr(lang, "subject_not_found"), show_alert=True)
         return
 
-    data = await state.get_data()
     subjects = data.get("v2_subjects") or []
     first_name = _v2_name_by_id(subjects, first_id)
     await state.update_data(first_subject_id=first_id, first_subject_name=first_name)
@@ -2596,13 +2637,13 @@ async def v2_pick_first(call: types.CallbackQuery, state: FSMContext):
     await OnlineV2.second_subject.set()
     try:
         await call.message.edit_text(
-            f"✅ 1-fan: <b>{first_name}</b>\n\nIkkinchi (tanlov) faningizni tanlang:",
+            v2_tr(lang, "first_subject_selected").format(first_name),
             parse_mode="HTML",
             reply_markup=_v2_subjects_kb(subjects, "v2s2"),
         )
     except Exception:
         await call.message.answer(
-            "Ikkinchi (tanlov) faningizni tanlang:",
+            v2_tr(lang, "subjects_choose_second"),
             reply_markup=_v2_subjects_kb(subjects, "v2s2"),
         )
 
@@ -2610,13 +2651,14 @@ async def v2_pick_first(call: types.CallbackQuery, state: FSMContext):
 @dp.callback_query_handler(lambda c: c.data and c.data.startswith("v2s2:"), state=OnlineV2.second_subject)
 async def v2_pick_second(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
+    data = await state.get_data()
+    lang = data.get("exam_lang") or "uz"
     try:
         second_id = int(call.data.split(":", 1)[1])
     except Exception:
-        await call.answer("Fan topilmadi", show_alert=True)
+        await call.answer(v2_tr(lang, "subject_not_found"), show_alert=True)
         return
 
-    data = await state.get_data()
     subjects = data.get("v2_subjects") or []
     first_id = data.get("first_subject_id")
     first_name = data.get("first_subject_name") or _v2_name_by_id(subjects, first_id)
@@ -2627,14 +2669,13 @@ async def v2_pick_second(call: types.CallbackQuery, state: FSMContext):
 
 async def _v2_ask_phone(message: types.Message, state: FSMContext) -> None:
     # 1-qadam: telefon raqam — contact share tugmasi bilan
+    data = await state.get_data()
+    lang = data.get("exam_lang") or "uz"
     await OnlineV2.phone.set()
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    kb.add(types.KeyboardButton(text="📞 Raqamni yuborish", request_contact=True))
+    kb.add(types.KeyboardButton(text=v2_tr(lang, "enter_phone_btn"), request_contact=True))
     sent = await message.answer(
-        "✅ Test topshirildi!\n\n"
-        "Natijangizni ko'rish uchun ma'lumotlaringizni to'ldiring.\n\n"
-        "📞 Telefon raqamingizni yuboring — pastdagi <b>📞 Raqamni yuborish</b> "
-        "tugmasini bosing yoki qo'lda kiriting (masalan: 941234567).",
+        v2_tr(lang, "test_submitted"),
         parse_mode="HTML",
         reply_markup=kb,
     )
@@ -2675,14 +2716,16 @@ async def v2_get_phone(message: types.Message, state: FSMContext):
     if await _restart_if_start(message, state):
         return
     await _v2_track(state, message.message_id)  # user input (xato bo'lsa ham)
+    data = await state.get_data()
+    lang = data.get("exam_lang") or "uz"
     phone_text = message.contact.phone_number if message.contact else (message.text or "")
     if not is_phone_ok(phone_text):
-        await _v2_say(message, state, tr("uz", "phone_invalid"))
+        await _v2_say(message, state, tr(lang, "phone_invalid"))
         return
     await state.update_data(phone=normalize_uz_phone(phone_text))
     await OnlineV2.full_name.set()
     sent = await message.answer(
-        "Familiya Ism kiriting:\nNamuna: Erkinov Ulug‘bek",
+        v2_tr(lang, "enter_fio"),
         reply_markup=ReplyKeyboardRemove(),
     )
     await _v2_track(state, sent.message_id)
@@ -2692,10 +2735,12 @@ async def v2_get_phone(message: types.Message, state: FSMContext):
 async def v2_get_name(message: types.Message, state: FSMContext):
     if await _restart_if_start(message, state):
         return
-    await _v2_track(state, message.message_id)  # user input (xato bo'lsa ham)
+    await _v2_track(state, message.message_id)  # user input (xato bo’lsa ham)
+    data = await state.get_data()
+    lang = data.get("exam_lang") or "uz"
     fio = normalize_fio_to_surname_name(message.text or "")
     if not fio:
-        await _v2_say(message, state, tr("uz", "fio_invalid_2words"))
+        await _v2_say(message, state, tr(lang, "fio_invalid_2words"))
         return
     await state.update_data(full_name=fio)
     await _v2_ask_region(message, state)
@@ -2711,16 +2756,16 @@ def _v2_regions_kb(regions: List[str]) -> types.InlineKeyboardMarkup:
     return kb
 
 
-def _v2_districts_kb(districts: List[str]) -> types.InlineKeyboardMarkup:
+def _v2_districts_kb(districts: List[str], lang: str = "uz") -> types.InlineKeyboardMarkup:
     kb = types.InlineKeyboardMarkup(row_width=1)
     for d in _dedupe_keep_order(districts)[:80]:
         dd = str(d)[:50]
         kb.add(types.InlineKeyboardButton(dd, callback_data=f"v2dist:{dd}"))
-    kb.row(types.InlineKeyboardButton("⬅️ Orqaga", callback_data="v2back:region"))
+    kb.row(types.InlineKeyboardButton(v2_tr(lang, "back_btn"), callback_data="v2back:region"))
     return kb
 
 
-def _v2_schools_kb(schools: List[Dict[str, Any]], page: int = 0) -> types.InlineKeyboardMarkup:
+def _v2_schools_kb(schools: List[Dict[str, Any]], page: int = 0, lang: str = "uz") -> types.InlineKeyboardMarkup:
     kb = types.InlineKeyboardMarkup(row_width=2)
     schools = schools or []
     pages = max(1, (len(schools) + SCHOOLS_PAGE_SIZE - 1) // SCHOOLS_PAGE_SIZE)
@@ -2735,12 +2780,14 @@ def _v2_schools_kb(schools: List[Dict[str, Any]], page: int = 0) -> types.Inline
     nav = _schools_nav_row(page, len(schools), "v2schpage:")
     if nav:
         kb.row(*nav)
-    kb.row(types.InlineKeyboardButton("⬅️ Orqaga", callback_data="v2back:district"))
+    kb.row(types.InlineKeyboardButton(v2_tr(lang, "back_btn"), callback_data="v2back:district"))
     return kb
 
 
 async def _v2_ask_region(message: types.Message, state: FSMContext) -> None:
-    wait = await message.answer("⏳ Iltimos, kuting…")
+    data = await state.get_data()
+    lang = data.get("exam_lang") or "uz"
+    wait = await message.answer(v2_tr(lang, "please_wait"))
     await _v2_track(state, wait.message_id)
     res = await fetch_regions()
     regions = (res.get("regions") or []) if res.get("ok") else []
@@ -2748,118 +2795,111 @@ async def _v2_ask_region(message: types.Message, state: FSMContext) -> None:
         # Fallback: ro'yxat olinmasa — maktab kodini qo'lda
         await OnlineV2.school_code.set()
         try:
-            await wait.edit_text(
-                "🏫 Maktab kodingizni kiriting (masalan: <code>SHAY186</code>):",
-                parse_mode="HTML",
-            )
+            await wait.edit_text(v2_tr(lang, "enter_school_code"))
         except Exception:
-            sent = await message.answer(
-                "🏫 Maktab kodingizni kiriting (masalan: <code>SHAY186</code>):",
-                parse_mode="HTML",
-            )
+            sent = await message.answer(v2_tr(lang, "enter_school_code"))
             await _v2_track(state, sent.message_id)
         return
     await state.update_data(v2_regions=regions)
     await OnlineV2.region.set()
     try:
-        await wait.edit_text("🌍 Viloyatingizni tanlang:", reply_markup=_v2_regions_kb(regions))
+        await wait.edit_text(v2_tr(lang, "choose_region"), reply_markup=_v2_regions_kb(regions))
     except Exception:
-        sent = await message.answer("🌍 Viloyatingizni tanlang:", reply_markup=_v2_regions_kb(regions))
+        sent = await message.answer(v2_tr(lang, "choose_region"), reply_markup=_v2_regions_kb(regions))
         await _v2_track(state, sent.message_id)
 
 
 @dp.callback_query_handler(lambda c: c.data and c.data.startswith("v2rgn:"), state=OnlineV2.region)
 async def v2_pick_region(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
+    data = await state.get_data()
+    lang = data.get("exam_lang") or "uz"
     region = call.data.split(":", 1)[1]
     try:
-        await call.message.edit_text("⏳ Iltimos, kuting…")
+        await call.message.edit_text(v2_tr(lang, "please_wait"))
     except Exception:
         pass
     res = await fetch_districts(region)
     districts = (res.get("districts") or []) if res.get("ok") else []
     if not districts:
         await OnlineV2.school_code.set()
-        await call.message.answer(
-            "🏫 Tumanlar topilmadi. Maktab kodingizni kiriting (masalan: <code>SHAY186</code>):",
-            parse_mode="HTML",
-        )
+        await call.message.answer(v2_tr(lang, "no_districts"))
         return
     await state.update_data(v2_region=region)
     await OnlineV2.district.set()
     try:
         await call.message.edit_text(
-            f"🌍 Viloyat: <b>{region}</b>\n\n🏙 Tumaningizni tanlang:",
+            v2_tr(lang, "region_label").format(region),
             parse_mode="HTML",
-            reply_markup=_v2_districts_kb(districts),
+            reply_markup=_v2_districts_kb(districts, lang),
         )
     except Exception:
-        await call.message.answer("🏙 Tumaningizni tanlang:", reply_markup=_v2_districts_kb(districts))
+        await call.message.answer(v2_tr(lang, "choose_district"), reply_markup=_v2_districts_kb(districts, lang))
 
 
 @dp.callback_query_handler(lambda c: c.data and c.data.startswith("v2dist:"), state=OnlineV2.district)
 async def v2_pick_district(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
     district = call.data.split(":", 1)[1]
+    data = await state.get_data()
+    lang = data.get("exam_lang") or "uz"
     try:
-        await call.message.edit_text("⏳ Iltimos, kuting…")
+        await call.message.edit_text(v2_tr(lang, "please_wait"))
     except Exception:
         pass
-    data = await state.get_data()
     region = data.get("v2_region") or ""
     res = await fetch_schools(region, district)
     schools = (res.get("schools") or []) if res.get("ok") else []
     if not schools:
         await OnlineV2.school_code.set()
-        await call.message.answer(
-            "🏫 Bu tumanda maktab topilmadi. Maktab kodingizni kiriting (masalan: <code>SHAY186</code>):",
-            parse_mode="HTML",
-        )
+        await call.message.answer(v2_tr(lang, "no_schools"))
         return
     await state.update_data(v2_district=district, v2_schools=schools)
     await OnlineV2.school.set()
     try:
         await call.message.edit_text(
-            f"🏙 Tuman: <b>{district}</b>\n\n🏫 Maktabingizni tanlang:",
+            v2_tr(lang, "district_label").format(district),
             parse_mode="HTML",
-            reply_markup=_v2_schools_kb(schools),
+            reply_markup=_v2_schools_kb(schools, lang=lang),
         )
     except Exception:
-        await call.message.answer("🏫 Maktabingizni tanlang:", reply_markup=_v2_schools_kb(schools))
+        await call.message.answer(v2_tr(lang, "choose_school"), reply_markup=_v2_schools_kb(schools, lang=lang))
 
 
 @dp.callback_query_handler(lambda c: c.data == "v2back:region", state=[OnlineV2.district, OnlineV2.school])
 async def v2_back_to_region(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
     data = await state.get_data()
+    lang = data.get("exam_lang") or "uz"
     regions = data.get("v2_regions") or []
     await OnlineV2.region.set()
     try:
-        await call.message.edit_text("🌍 Viloyatingizni tanlang:", reply_markup=_v2_regions_kb(regions))
+        await call.message.edit_text(v2_tr(lang, "choose_region"), reply_markup=_v2_regions_kb(regions))
     except Exception:
-        await call.message.answer("🌍 Viloyatingizni tanlang:", reply_markup=_v2_regions_kb(regions))
+        await call.message.answer(v2_tr(lang, "choose_region"), reply_markup=_v2_regions_kb(regions))
 
 
 @dp.callback_query_handler(lambda c: c.data == "v2back:district", state=OnlineV2.school)
 async def v2_back_to_district(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
+    data = await state.get_data()
+    lang = data.get("exam_lang") or "uz"
     try:
-        await call.message.edit_text("⏳ Iltimos, kuting…")
+        await call.message.edit_text(v2_tr(lang, "please_wait"))
     except Exception:
         pass
-    data = await state.get_data()
     region = data.get("v2_region") or ""
     res = await fetch_districts(region)
     districts = (res.get("districts") or []) if res.get("ok") else []
     await OnlineV2.district.set()
     try:
         await call.message.edit_text(
-            f"🌍 Viloyat: <b>{region}</b>\n\n🏙 Tumaningizni tanlang:",
+            v2_tr(lang, "region_label").format(region),
             parse_mode="HTML",
-            reply_markup=_v2_districts_kb(districts),
+            reply_markup=_v2_districts_kb(districts, lang),
         )
     except Exception:
-        await call.message.answer("🏙 Tumaningizni tanlang:", reply_markup=_v2_districts_kb(districts))
+        await call.message.answer(v2_tr(lang, "choose_district"), reply_markup=_v2_districts_kb(districts, lang))
 
 
 @dp.callback_query_handler(lambda c: c.data and c.data.startswith("v2schpage:"), state=OnlineV2.school)
@@ -2868,8 +2908,9 @@ async def v2_school_page(call: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
     page = _safe_int(call.data.split(":", 1)[1], 0)
     schools = data.get("v2_schools") or []
+    lang = data.get("exam_lang") or "uz"
     try:
-        await call.message.edit_reply_markup(reply_markup=_v2_schools_kb(schools, page=page))
+        await call.message.edit_reply_markup(reply_markup=_v2_schools_kb(schools, page=page, lang=lang))
     except Exception:
         pass
 
@@ -2888,9 +2929,11 @@ async def v2_get_school_code(message: types.Message, state: FSMContext):
         return
     # Fallback: cascade ishlamasa maktab kodini qo'lda kiritish
     await _v2_track(state, message.message_id)
+    data = await state.get_data()
+    lang = data.get("exam_lang") or "uz"
     school = (message.text or "").strip()
     if not school:
-        await _v2_say(message, state, "Maktab kodini kiriting (masalan: SHAY186):")
+        await _v2_say(message, state, v2_tr(lang, "enter_school_code"))
         return
     await state.update_data(school_code=school)
     await _v2_ask_gender(message, state)
@@ -2898,16 +2941,18 @@ async def v2_get_school_code(message: types.Message, state: FSMContext):
 
 async def _v2_ask_gender(message: types.Message, state: FSMContext) -> None:
     # Oxirgi qadam: jins tanlash (inline)
+    data = await state.get_data()
+    lang = data.get("exam_lang") or "uz"
     await OnlineV2.gender.set()
     kb = types.InlineKeyboardMarkup(row_width=2)
     kb.add(
-        types.InlineKeyboardButton("👦 Erkak", callback_data="v2gender:male"),
-        types.InlineKeyboardButton("👧 Ayol", callback_data="v2gender:female"),
+        types.InlineKeyboardButton(v2_tr(lang, "gender_male"), callback_data="v2gender:male"),
+        types.InlineKeyboardButton(v2_tr(lang, "gender_female"), callback_data="v2gender:female"),
     )
     try:
-        await message.edit_text("🚻 Jinsingizni tanlang:", reply_markup=kb)
+        await message.edit_text(v2_tr(lang, "choose_gender"), reply_markup=kb)
     except Exception:
-        sent = await message.answer("🚻 Jinsingizni tanlang:", reply_markup=kb)
+        sent = await message.answer(v2_tr(lang, "choose_gender"), reply_markup=kb)
         await _v2_track(state, sent.message_id)
 
 
@@ -2918,16 +2963,17 @@ async def v2_pick_gender(call: types.CallbackQuery, state: FSMContext):
     if gender not in ("male", "female"):
         gender = "male"
     await state.update_data(gender=gender)
+    data = await state.get_data()
+    lang = data.get("exam_lang") or "uz"
     try:
-        await call.message.edit_text("⏳ Iltimos, kuting…")
+        await call.message.edit_text(v2_tr(lang, "please_wait"))
     except Exception:
         pass
-    data = await state.get_data()
     code = data.get("school_code") or ""
     result = await _v2_finish(call.message, state, code)
     if result == "bad_school":
         await OnlineV2.school_code.set()
-        await _v2_say(call.message, state, "❌ Maktab kodi topilmadi. Qayta kiriting (masalan: SHAY186):")
+        await _v2_say(call.message, state, v2_tr(lang, "school_not_found"))
 
 
 async def _v2_finish(message: types.Message, state: FSMContext, school_code: str) -> Optional[str]:
@@ -2944,6 +2990,7 @@ async def _v2_finish(message: types.Message, state: FSMContext, school_code: str
         "language": data.get("exam_lang") or "uz",
     })
 
+    lang = data.get("exam_lang") or "uz"
     if not res.get("ok"):
         txt = str(res.get("text") or "")
         status = res.get("status")
@@ -2951,9 +2998,9 @@ async def _v2_finish(message: types.Message, state: FSMContext, school_code: str
             return "bad_school"
         await state.finish()
         if status == 404:
-            await message.answer("❌ Test topilmadi. /start v2 bilan qaytadan boshlang.")
+            await message.answer(v2_tr(lang, "test_not_found"))
         else:
-            await message.answer(f"❌ Natijani olishda xatolik ({status}). Keyinroq urinib ko'ring.")
+            await message.answer(v2_tr(lang, "result_error").format(status))
         return None
 
     d = res.get("data") or {}
@@ -2998,13 +3045,13 @@ async def _v2_finish(message: types.Message, state: FSMContext, school_code: str
 
     # DTM standart max: majburiy 33, asosiy 93, ikkinchi 63
     await message.answer(
-        "<b>Test natijasi:</b>\n\n"
+        v2_tr(lang, "result_header") + "\n\n"
         "<blockquote>"
-        f"- Majburiy fanlar: {_ball(d.get('mandatory_ball'))} / 33\n"
+        + v2_tr(lang, "result_mandatory").format(_ball(d.get("mandatory_ball"))) + "\n"
         f"- {first_label}: {_ball(d.get('primary_ball'))} / 93\n"
         f"- {second_label}: {_ball(d.get('secondary_ball'))} / 63"
         "</blockquote>\n\n"
-        f"Jami: <b>{_ball(d.get('total_ball'))} ball</b>",
+        + v2_tr(lang, "result_total").format(_ball(d.get("total_ball"))),
         parse_mode="HTML",
         reply_markup=ReplyKeyboardRemove(),
     )
