@@ -18,12 +18,34 @@
 #     # executor.start_polling(dp, on_startup=on_startup)
 #     executor.start_polling(dp, on_startup=lambda _: startup(), on_shutdown=lambda _: shutdown())
 import logging
+import re
+from data.config import BOT_TOKEN
+
+
+class _TokenMaskFilter(logging.Filter):
+    """Log yozuvlaridan bot tokenni yashiradi."""
+    _TOKEN_RE = re.compile(r'\d{5,12}:[A-Za-z0-9_-]{35,}')
+
+    def __init__(self):
+        super().__init__()
+        self._literal = BOT_TOKEN or ""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        if self._literal and self._literal in msg:
+            record.msg = record.msg.replace(self._literal, "***")
+            record.args = ()
+        record.msg = self._TOKEN_RE.sub("***", str(record.msg))
+        record.args = ()
+        return True
+
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
+logging.getLogger().addFilter(_TokenMaskFilter())
 
 from aiogram import executor
 
