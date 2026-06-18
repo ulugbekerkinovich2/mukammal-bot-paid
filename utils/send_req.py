@@ -80,12 +80,15 @@ async def _request_json_lb(
         base = backends[(start + i) % len(backends)]
         url = base.rstrip("/") + "/" + path.lstrip("/")
         res = await _request_json(method, url, **kwargs)
-        if res.get("ok") or res.get("status", 0) < 500:
+        status = res.get("status", 0)
+        # 0 = network error (server down), 5xx = server error → keyingisiga o't
+        # 2xx yoki 4xx (client error) → qaytaramiz
+        if res.get("ok") or (0 < status < 500):
             global _lb_counter
             _lb_counter = start + i + 1
             return res
         last_res = res
-        logger.warning("[lb] backend %s failed status=%s, trying next", base, res.get("status"))
+        logger.warning("[lb] backend %s failed status=%s, trying next", base, status)
     return last_res
 
 ADS_BOTS = os.getenv("ADS_BOTS", "https://ads.misterdev.uz/bots/get").strip()
@@ -680,9 +683,7 @@ async def get_dtm_result(document_code):
     Yangi API orqali natijani olib beradi.
     GET /api/v1/dtm/result/{document_code}
     """
-    import os
-
-    secret_key = os.getenv("SECRET_KEY", "K0yKC4LYBnCNLncjE5BH57i13yZIBhaT")
+    secret_key = (SECRET_KEY or "").strip()
     headers = {
         "x-api-key": secret_key,
         "accept": "application/json"
