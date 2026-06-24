@@ -3355,10 +3355,10 @@ async def pre_choose_online_cb(call: types.CallbackQuery, state: FSMContext):
 
 @dp.callback_query_handler(lambda c: c.data == "check_sub", state="*")
 async def check_sub(call: types.CallbackQuery, state: FSMContext):
-    ok = await is_subscribed(call.from_user.id, call.bot)
-    if not ok:
-        await call.answer("Hali obuna emassiz. Avval obuna bo’ling ✅", show_alert=True)
-        return
+    # ok = await is_subscribed(call.from_user.id, call.bot)
+    # if not ok:
+    #     await call.answer("Hali obuna emassiz. Avval obuna bo’ling ✅", show_alert=True)
+    #     return
 
     await call.answer("✅ Obuna tasdiqlandi")
 
