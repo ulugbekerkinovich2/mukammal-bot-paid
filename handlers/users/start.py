@@ -2518,16 +2518,16 @@ async def _track_start_v2(tg_user) -> None:
 
 
 async def on_start_v2(message: types.Message, state: FSMContext) -> None:
-    # 0) Kanal obunasini tekshiramiz
-    if not await is_subscribed(message.from_user.id, message.bot):
-        kb = types.InlineKeyboardMarkup()
-        kb.add(types.InlineKeyboardButton("✅ Kanalga obuna bo'lish", url=CHANNEL_LINK))
-        kb.add(types.InlineKeyboardButton("🔄 Tekshirish", callback_data="check_sub_v2"))
-        await message.answer(
-            "Botdan foydalanish uchun rasmiy kanalimizga a'zo bo'ling! ✅",
-            reply_markup=kb,
-        )
-        return
+    # # 0) Kanal obunasini tekshiramiz
+    # if not await is_subscribed(message.from_user.id, message.bot):
+    #     kb = types.InlineKeyboardMarkup()
+    #     kb.add(types.InlineKeyboardButton("✅ Kanalga obuna bo'lish", url=CHANNEL_LINK))
+    #     kb.add(types.InlineKeyboardButton("🔄 Tekshirish", callback_data="check_sub_v2"))
+    #     await message.answer(
+    #         "Botdan foydalanish uchun rasmiy kanalimizga a'zo bo'ling! ✅",
+    #         reply_markup=kb,
+    #     )
+    #     return
 
     # 1) tracking (best-effort, bloklamaydi)
     await _track_start_v2(message.from_user)
@@ -3232,14 +3232,14 @@ async def start_cmd(message: types.Message, state: FSMContext):
     # Queue workerlarni ishga tushiramiz (1 marta)
     await ensure_register_workers(message.bot, workers=2)
 
-    # 1. Majburiy obunani tekshiramiz
-    is_sub = await is_subscribed(message.from_user.id, message.bot)
-    if not is_sub:
-        await message.answer(
-            "Botdan foydalanish uchun rasmiy kanalimizga a'zo bo'ling! ✅",
-            reply_markup=sub_kb()
-        )
-        return
+    # # 1. Majburiy obunani tekshiramiz
+    # is_sub = await is_subscribed(message.from_user.id, message.bot)
+    # if not is_sub:
+    #     await message.answer(
+    #         "Botdan foydalanish uchun rasmiy kanalimizga a'zo bo'ling! ✅",
+    #         reply_markup=sub_kb()
+    #     )
+    #     return
 
     # 2. Offline o'chirilgan — chooser ko'rsatishning hojati yo'q. Darhol
     # online flow'ga o'tkazamiz: ro'yxatdan o'tgan bo'lsa, greeting; yo'q
@@ -3372,10 +3372,10 @@ async def check_sub(call: types.CallbackQuery, state: FSMContext):
 
 @dp.callback_query_handler(lambda c: c.data == "check_sub_v2", state="*")
 async def check_sub_v2(call: types.CallbackQuery, state: FSMContext):
-    ok = await is_subscribed(call.from_user.id, call.bot)
-    if not ok:
-        await call.answer("Hali obuna emassiz. Avval obuna bo’ling ✅", show_alert=True)
-        return
+    # ok = await is_subscribed(call.from_user.id, call.bot)
+    # if not ok:
+    #     await call.answer("Hali obuna emassiz. Avval obuna bo’ling ✅", show_alert=True)
+    #     return
 
     await call.answer("✅ Obuna tasdiqlandi")
     try:
