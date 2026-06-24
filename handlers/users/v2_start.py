@@ -25,6 +25,26 @@ _phone_kb = ReplyKeyboardMarkup(
 _PHONE_RE = re.compile(r"^\+?\d{9,15}$")
 
 
+async def _delete_msg(chat_id, msg_id):
+    try:
+        await bot.delete_message(chat_id, msg_id)
+    except Exception:
+        pass
+
+
+async def _clean(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    for mid in data.get("_v2_msgs", []):
+        await _delete_msg(message.chat.id, mid)
+    await _delete_msg(message.chat.id, message.message_id)
+
+
+async def _track(state: FSMContext, *msg_ids):
+    data = await state.get_data()
+    existing = data.get("_v2_msgs", [])
+    await state.update_data(_v2_msgs=existing + list(msg_ids))
+
+
 def _normalize_phone(raw: str) -> str:
     s = raw.strip().replace(" ", "").replace("-", "")
     if s.isdigit() and len(s) == 9:
@@ -51,12 +71,15 @@ def _complete_kb() -> InlineKeyboardMarkup:
 
 async def start_v2_flow(message: types.Message, state: FSMContext):
     await state.finish()
-    await message.answer(
+    await _delete_msg(message.chat.id, message.message_id)
+    sent = await bot.send_message(
+        message.chat.id,
         "🎓 Assalomu alaykum!\n\n"
         "Mentalaba orqali universitet kontrakt narxlarini solishtiring va o'zingizga mos OTMni toping.\n\n"
         "📲 Davom etish uchun telefon raqamingizni qoldiring va maxsus linkni oling 👇",
         reply_markup=_phone_kb,
     )
+    await state.update_data(_v2_msgs=[sent.message_id])
     await V2Form.phone.set()
 
 
@@ -65,11 +88,14 @@ async def v2_phone_contact(message: types.Message, state: FSMContext):
     phone = message.contact.phone_number
     if not phone.startswith("+"):
         phone = "+" + phone
-    await state.update_data(phone=phone)
-    await message.answer(
+    await _clean(message, state)
+    await state.update_data(phone=phone, _v2_msgs=[])
+    sent = await bot.send_message(
+        message.chat.id,
         "Rahmat ✅\n\nEndi ismingizni yozib yuboring 👇",
         reply_markup=ReplyKeyboardRemove(),
     )
+    await _track(state, sent.message_id)
     await V2Form.fio.set()
 
 
@@ -77,15 +103,21 @@ async def v2_phone_contact(message: types.Message, state: FSMContext):
 async def v2_phone_text(message: types.Message, state: FSMContext):
     raw = (message.text or "").strip()
     if not _is_phone_ok(raw):
-        await message.answer(
-            "❌ Noto'g'ri raqam.\nNamuna: 941234567 yoki +998941234567"
+        await _delete_msg(message.chat.id, message.message_id)
+        err = await bot.send_message(
+            message.chat.id,
+            "❌ Noto'g'ri raqam.\nNamuna: 941234567 yoki +998941234567",
         )
+        await _track(state, err.message_id)
         return
-    await state.update_data(phone=_normalize_phone(raw))
-    await message.answer(
+    await _clean(message, state)
+    await state.update_data(phone=_normalize_phone(raw), _v2_msgs=[])
+    sent = await bot.send_message(
+        message.chat.id,
         "Rahmat ✅\n\nEndi ismingizni yozib yuboring 👇",
         reply_markup=ReplyKeyboardRemove(),
     )
+    await _track(state, sent.message_id)
     await V2Form.fio.set()
 
 
@@ -93,16 +125,20 @@ async def v2_phone_text(message: types.Message, state: FSMContext):
 async def v2_fio(message: types.Message, state: FSMContext):
     fio = (message.text or "").strip()
     if len(fio) < 2:
-        await message.answer("❌ Ismingizni kiriting:")
+        await _delete_msg(message.chat.id, message.message_id)
+        err = await bot.send_message(message.chat.id, "❌ Ismingizni kiriting:")
+        await _track(state, err.message_id)
         return
-    await state.update_data(fio=fio)
-    parts = fio.split()
-    ism = parts[0]
-    await message.answer(
+    await _clean(message, state)
+    ism = fio.split()[0]
+    await state.update_data(fio=fio, _v2_msgs=[])
+    sent = await bot.send_message(
+        message.chat.id,
         f"Ajoyib, {ism} 👍\n\n"
         "Qaysi universitetga topshirishni rejalashtiryapsiz?\n\n"
-        "✍️ Universitet nomini yozing\n(Misol: AIFU, TMC, TAFU)"
+        "✍️ Universitet nomini yozing\n(Misol: AIFU, TMC, TAFU)",
     )
+    await _track(state, sent.message_id)
     await V2Form.university.set()
 
 
@@ -110,7 +146,9 @@ async def v2_fio(message: types.Message, state: FSMContext):
 async def v2_university(message: types.Message, state: FSMContext):
     university = (message.text or "").strip()
     if not university:
-        await message.answer("❌ OTM nomini kiriting:")
+        await _delete_msg(message.chat.id, message.message_id)
+        err = await bot.send_message(message.chat.id, "❌ OTM nomini kiriting:")
+        await _track(state, err.message_id)
         return
 
     data = await state.get_data()
@@ -144,9 +182,11 @@ async def v2_university(message: types.Message, state: FSMContext):
     except Exception as e:
         logger.error(f"[V2] channel send error: {repr(e)}")
 
+    await _clean(message, state)
     await state.finish()
 
-    await message.answer(
+    await bot.send_message(
+        message.chat.id,
         "Zo'r tanlov 🎯\n\n"
         "Siz tanlagan universitet va boshqa alternativalarning kontrakt narxlarini shu yerda ko'rishingiz mumkin:",
         reply_markup=_complete_kb(),
