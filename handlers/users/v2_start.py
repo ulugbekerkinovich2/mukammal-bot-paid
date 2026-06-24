@@ -92,14 +92,12 @@ async def v2_phone_text(message: types.Message, state: FSMContext):
 @dp.message_handler(lambda m: not (m.text or "").startswith("/"), state=V2Form.fio)
 async def v2_fio(message: types.Message, state: FSMContext):
     fio = (message.text or "").strip()
-    if len(fio.split()) < 2 or len(fio) < 5:
-        await message.answer(
-            "❌ Ism va familiyani kiriting.\nNamuna: Ergashev Sardor"
-        )
+    if len(fio) < 2:
+        await message.answer("❌ Ismingizni kiriting:")
         return
     await state.update_data(fio=fio)
     parts = fio.split()
-    ism = parts[1] if len(parts) >= 2 else parts[0]
+    ism = parts[0]
     await message.answer(
         f"Ajoyib, {ism} 👍\n\n"
         "Qaysi universitetga topshirishni rejalashtiryapsiz?\n\n"
