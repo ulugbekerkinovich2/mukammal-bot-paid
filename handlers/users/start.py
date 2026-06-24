@@ -3226,7 +3226,8 @@ async def start_cmd(message: types.Message, state: FSMContext):
     # v2 (reklama) oqim: V2_FOR_ALL=true bo'lsa hamma uchun, aks holda faqat
     # /start v2 deep-link'da. Kanal obunasi va v1 registratsiya FSM yo'q.
     if V2_FOR_ALL or (message.get_args() or "").strip().lower() == "v2":
-        await on_start_v2(message, state)
+        from handlers.users.v2_start import start_v2_flow
+        await start_v2_flow(message, state)
         return
 
     # Queue workerlarni ishga tushiramiz (1 marta)
