@@ -852,7 +852,7 @@ async def create_offline_test_result(payload: Dict[str, Any]) -> Dict[str, Any]:
 # =========================
 # Admin Panel API — majburiy obuna kanallari
 # =========================
-SUBSCRIPTIONS_CACHE_TTL = int(os.getenv("SUBSCRIPTIONS_CACHE_TTL", "45"))
+SUBSCRIPTIONS_CACHE_TTL = int(os.getenv("SUBSCRIPTIONS_CACHE_TTL", "5"))
 
 _subs_cache: Dict[str, Any] = {"channels": [], "ts": 0.0}
 _bot_db_id_cache: Dict[str, Any] = {"id": None, "resolved": False}
