@@ -37,12 +37,13 @@ from utils.send_req import (
     normalize_test_type,
     extract_test_type,
     create_offline_test_result,
+    fetch_active_subscriptions,
     DEFAULT_TEST_TYPE,
     REGISTER_RETRY_TIMEOUT_SEC,
     REGISTER_RETRY_CONNECT_SEC,
     REGISTER_RETRY_ATTEMPTS,
 )
-from data.config import ADMIN_CHAT_ID, CHANNEL_USERNAME, CHANNEL_LINK
+from data.config import ADMIN_CHAT_ID, CHANNEL_LINK
 from data.config import BASE_URL, SECRET_KEY, V2_FOR_ALL, V2_API_BASE
 
 import asyncio
@@ -1660,10 +1661,28 @@ def register_status_kb(ui_lang: str, job_id: str):
     )
     return kb
 
-def sub_kb():
+def _channel_join_url(channel: Dict[str, Any]) -> Optional[str]:
+    cid = str(channel.get("channel_id") or "").strip()
+    if cid.startswith("@"):
+        return f"https://t.me/{cid[1:]}"
+    if cid and not cid.lstrip("-").isdigit():
+        return f"https://t.me/{cid}"
+    return None  # numeric chat_id — username yo'q, link qurib bo'lmaydi
+
+
+def sub_kb(channels: Optional[list] = None, check_callback: str = "check_sub"):
+    """Majburiy kanallar uchun obuna klaviaturasi.
+    channels berilmasa (eski static fallback) — CHANNEL_LINK ishlatiladi."""
     kb = InlineKeyboardMarkup(row_width=1)
-    kb.add(InlineKeyboardButton("✅ Kanalga obuna bo‘lish", url=CHANNEL_LINK))
-    kb.add(InlineKeyboardButton("🔄 Tekshirish", callback_data="check_sub"))
+    if channels:
+        for ch in channels:
+            title = ch.get("title") or ch.get("channel_id") or "Kanal"
+            url = _channel_join_url(ch)
+            if url:
+                kb.add(InlineKeyboardButton(f"✅ {title}", url=url))
+    else:
+        kb.add(InlineKeyboardButton("✅ Kanalga obuna bo‘lish", url=CHANNEL_LINK))
+    kb.add(InlineKeyboardButton("🔄 Tekshirish", callback_data=check_callback))
     return kb
 
 def _dedupe_keep_order(items: List[str]) -> List[str]:
@@ -2519,13 +2538,11 @@ async def _track_start_v2(tg_user) -> None:
 
 async def on_start_v2(message: types.Message, state: FSMContext) -> None:
     # 0) Kanal obunasini tekshiramiz
-    if not await is_subscribed(message.from_user.id, message.bot):
-        kb = types.InlineKeyboardMarkup()
-        kb.add(types.InlineKeyboardButton("✅ Kanalga obuna bo'lish", url=CHANNEL_LINK))
-        kb.add(types.InlineKeyboardButton("🔄 Tekshirish", callback_data="check_sub_v2"))
+    not_joined = await check_subscriptions(message.from_user.id, message.bot)
+    if not_joined:
         await message.answer(
             "Botdan foydalanish uchun rasmiy kanalimizga a'zo bo'ling! ✅",
-            reply_markup=kb,
+            reply_markup=sub_kb(not_joined, check_callback="check_sub_v2"),
         )
         return
 
@@ -3206,12 +3223,30 @@ async def _show_online_ready(target_message: types.Message, user_id: int, ui_lan
 # ----------------------------
 # Subscribe check
 # ----------------------------
-async def is_subscribed(user_id: int, bot) -> bool:
-    try:
-        member = await bot.get_chat_member(CHANNEL_USERNAME, user_id)
-        return member.status in ("creator", "administrator", "member")
-    except Exception:
-        return False
+_SUB_OK_STATUSES = ("creator", "administrator", "member")
+
+
+async def check_subscriptions(user_id: int, bot) -> list:
+    """Admin panelda faol qilingan har bir majburiy kanalni tekshiradi.
+    Qaytadi: a'zo bo'lmagan kanallar ro'yxati (bo'sh [] — hammasiga a'zo yoki
+    majburiy kanal umuman yo'q)."""
+    channels = await fetch_active_subscriptions()
+    if not channels:
+        return []
+
+    not_joined = []
+    for ch in channels:
+        cid = ch.get("channel_id")
+        try:
+            member = await bot.get_chat_member(cid, user_id)
+            status = member.status
+        except Exception:
+            status = "left"
+        if status not in _SUB_OK_STATUSES:
+            not_joined.append(ch)
+    return not_joined
+
+
 
 # ----------------------------
 # Handlers
@@ -3233,11 +3268,11 @@ async def start_cmd(message: types.Message, state: FSMContext):
     await ensure_register_workers(message.bot, workers=2)
 
     # 1. Majburiy obunani tekshiramiz
-    is_sub = await is_subscribed(message.from_user.id, message.bot)
-    if not is_sub:
+    not_joined = await check_subscriptions(message.from_user.id, message.bot)
+    if not_joined:
         await message.answer(
             "Botdan foydalanish uchun rasmiy kanalimizga a'zo bo'ling! ✅",
-            reply_markup=sub_kb()
+            reply_markup=sub_kb(not_joined)
         )
         return
 
@@ -3355,8 +3390,8 @@ async def pre_choose_online_cb(call: types.CallbackQuery, state: FSMContext):
 
 @dp.callback_query_handler(lambda c: c.data == "check_sub", state="*")
 async def check_sub(call: types.CallbackQuery, state: FSMContext):
-    ok = await is_subscribed(call.from_user.id, call.bot)
-    if not ok:
+    not_joined = await check_subscriptions(call.from_user.id, call.bot)
+    if not_joined:
         await call.answer("Hali obuna emassiz. Avval obuna bo’ling ✅", show_alert=True)
         return
 
@@ -3372,8 +3407,8 @@ async def check_sub(call: types.CallbackQuery, state: FSMContext):
 
 @dp.callback_query_handler(lambda c: c.data == "check_sub_v2", state="*")
 async def check_sub_v2(call: types.CallbackQuery, state: FSMContext):
-    ok = await is_subscribed(call.from_user.id, call.bot)
-    if not ok:
+    not_joined = await check_subscriptions(call.from_user.id, call.bot)
+    if not_joined:
         await call.answer("Hali obuna emassiz. Avval obuna bo’ling ✅", show_alert=True)
         return
 

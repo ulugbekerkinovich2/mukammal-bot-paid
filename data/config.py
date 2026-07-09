@@ -33,6 +33,13 @@ MENTALABA_API_BASE = env.str("MENTALABA_API_BASE", "https://api.mentalaba.uz")
 MENTALABA_API_KEY = env.str("MENTALABA_API_KEY", "")
 MENTALABA_BEARER = env.str("MENTALABA_BEARER", "")
 ADMISSION_YEAR = env.str("ADMISSION_YEAR", "2026")
+
+# Admin Panel API (ko'p-botli boshqaruv, majburiy obuna kanallari, broadcast).
+# docs/admin-api.md va docs/bot-subscription-check.md ga qarang.
+ADMIN_API_BASE = env.str("ADMIN_API_BASE", "https://dtmpaperreaderapi.mentalaba.uz")
+ADMIN_TOKEN = env.str("ADMIN_TOKEN", "")
+# Loyihaning admin paneldagi DB bot id (integer, Telegram bot id emas).
+BOT_DB_ID = env.str("BOT_DB_ID", "")
 # SUBJECTS_MAP = {
 #     "Matematika": {
 #         "id": 20,

@@ -6,7 +6,7 @@ import random
 import aiohttp
 import psycopg2
 from dotenv import load_dotenv
-from data.config import SECRET_KEY, BASE_URL, BASE_URL_2
+from data.config import SECRET_KEY, BASE_URL, BASE_URL_2, ADMIN_API_BASE, ADMIN_TOKEN, BOT_DB_ID
 from urllib.parse import quote  # (qolaversin, ishlatsang kerak bo‘ladi)
 
 load_dotenv()
@@ -847,3 +847,44 @@ async def create_offline_test_result(payload: Dict[str, Any]) -> Dict[str, Any]:
     else:
         logger.error("[mentalaba] create failed status=%s text=%s", res.get("status"), str(res.get("text"))[:300])
     return res
+
+
+# =========================
+# Admin Panel API — majburiy obuna kanallari
+# =========================
+SUBSCRIPTIONS_CACHE_TTL = int(os.getenv("SUBSCRIPTIONS_CACHE_TTL", "45"))
+
+_subs_cache: Dict[str, Any] = {"channels": [], "ts": 0.0}
+
+
+async def fetch_active_subscriptions(force: bool = False) -> list:
+    """GET /api/v1/admin/bots/{bot_id}/subscriptions/active — majburiy kanallar.
+
+    30-60s cache qilinadi (docs/bot-subscription-check.md). ADMIN_TOKEN yoki
+    BOT_DB_ID sozlanmagan bo'lsa — bo'sh ro'yxat (majburiy kanal yo'q deb hisoblanadi).
+    Backend/tarmoq xatosida ham eski cache (agar bor bo'lsa) qaytariladi —
+    bitta uzilish barcha userlarni bloklab qo'ymasin.
+    """
+    now = asyncio.get_event_loop().time()
+    if not force and (now - _subs_cache["ts"]) < SUBSCRIPTIONS_CACHE_TTL:
+        return _subs_cache["channels"]
+
+    token = (ADMIN_TOKEN or "").strip()
+    bot_id = (BOT_DB_ID or "").strip()
+    if not token or not bot_id:
+        return _subs_cache["channels"]
+
+    base = (ADMIN_API_BASE or "").rstrip("/")
+    url = f"{base}/api/v1/admin/bots/{bot_id}/subscriptions/active"
+    res = await _request_json(
+        "GET", url,
+        headers={"X-Admin-Token": token},
+        timeout_total=DEFAULT_TIMEOUT_SEC,
+        timeout_connect=DEFAULT_CONNECT_SEC,
+    )
+    if res.get("ok") and isinstance(res.get("data"), list):
+        _subs_cache["channels"] = res["data"]
+        _subs_cache["ts"] = now
+    else:
+        logger.warning("[subs] fetch failed status=%s text=%s", res.get("status"), str(res.get("text"))[:200])
+    return _subs_cache["channels"]
