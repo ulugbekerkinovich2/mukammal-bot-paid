@@ -899,6 +899,10 @@ async def _resolve_bot_db_id(bot_username: Optional[str] = None) -> Optional[str
             if name == uname:
                 found = b
                 break
+    if not found and len(bots) == 1:
+        # token_preview/name formati noma'lum bo'lsa ham, bitta bot bo'lsa
+        # taxmin qilishning hojati yo'q — o'shani ishlatamiz.
+        found = bots[0]
 
     if found:
         _bot_db_id_cache["id"] = str(found["id"])
