@@ -6,7 +6,7 @@ import random
 import aiohttp
 import psycopg2
 from dotenv import load_dotenv
-from data.config import SECRET_KEY, BASE_URL, BASE_URL_2, ADMIN_API_BASE, ADMIN_TOKEN, BOT_DB_ID
+from data.config import SECRET_KEY, BASE_URL, BASE_URL_2, ADMIN_API_BASE, ADMIN_TOKEN, BOT_DB_ID, BOT_TOKEN
 from urllib.parse import quote  # (qolaversin, ishlatsang kerak bo‘ladi)
 
 load_dotenv()
@@ -855,23 +855,79 @@ async def create_offline_test_result(payload: Dict[str, Any]) -> Dict[str, Any]:
 SUBSCRIPTIONS_CACHE_TTL = int(os.getenv("SUBSCRIPTIONS_CACHE_TTL", "45"))
 
 _subs_cache: Dict[str, Any] = {"channels": [], "ts": 0.0}
+_bot_db_id_cache: Dict[str, Any] = {"id": None, "resolved": False}
 
 
-async def fetch_active_subscriptions(force: bool = False) -> list:
+async def _resolve_bot_db_id(bot_username: Optional[str] = None) -> Optional[str]:
+    """BOT_DB_ID .env'da qo'lda berilgan bo'lsa — o'shani ishlatadi.
+    Aks holda GET /api/v1/admin/bots ro'yxatidan shu botni token_preview
+    yoki username orqali topib, jarayon davomida keshlaydi (bir marta so'rov)."""
+    manual = (BOT_DB_ID or "").strip()
+    if manual:
+        return manual
+
+    if _bot_db_id_cache["resolved"]:
+        return _bot_db_id_cache["id"]
+
+    token = (ADMIN_TOKEN or "").strip()
+    if not token:
+        return None
+
+    base = (ADMIN_API_BASE or "").rstrip("/")
+    res = await _request_json(
+        "GET", f"{base}/api/v1/admin/bots",
+        headers={"X-Admin-Token": token},
+        timeout_total=DEFAULT_TIMEOUT_SEC,
+        timeout_connect=DEFAULT_CONNECT_SEC,
+    )
+    bots = res.get("data") if res.get("ok") else None
+    if not isinstance(bots, list):
+        logger.warning("[subs] bots list fetch failed status=%s", res.get("status"))
+        return None
+
+    my_token = (BOT_TOKEN or "").strip()
+    found = None
+    for b in bots:
+        preview = str(b.get("token_preview") or "").strip()
+        if preview and my_token and (my_token.startswith(preview) or preview in my_token):
+            found = b
+            break
+    if not found and bot_username:
+        uname = bot_username.lstrip("@").lower()
+        for b in bots:
+            name = str(b.get("name") or "").lstrip("@").lower()
+            if name == uname:
+                found = b
+                break
+
+    if found:
+        _bot_db_id_cache["id"] = str(found["id"])
+        logger.info("[subs] auto-resolved bot_db_id=%s (name=%s)", found["id"], found.get("name"))
+    else:
+        logger.warning("[subs] bot topilmadi admin panel ro'yxatida (token_preview/name mos kelmadi)")
+    _bot_db_id_cache["resolved"] = True
+    return _bot_db_id_cache["id"]
+
+
+async def fetch_active_subscriptions(force: bool = False, bot_username: Optional[str] = None) -> list:
     """GET /api/v1/admin/bots/{bot_id}/subscriptions/active — majburiy kanallar.
 
-    30-60s cache qilinadi (docs/bot-subscription-check.md). ADMIN_TOKEN yoki
-    BOT_DB_ID sozlanmagan bo'lsa — bo'sh ro'yxat (majburiy kanal yo'q deb hisoblanadi).
-    Backend/tarmoq xatosida ham eski cache (agar bor bo'lsa) qaytariladi —
-    bitta uzilish barcha userlarni bloklab qo'ymasin.
+    30-60s cache qilinadi (docs/bot-subscription-check.md). bot_id qo'lda
+    (BOT_DB_ID) yoki avtomatik (token_preview/username orqali) aniqlanadi.
+    ADMIN_TOKEN sozlanmagan yoki bot_id topilmasa — bo'sh ro'yxat (majburiy
+    kanal yo'q deb hisoblanadi). Backend/tarmoq xatosida ham eski cache
+    (agar bor bo'lsa) qaytariladi — bitta uzilish barcha userlarni bloklab qo'ymasin.
     """
     now = asyncio.get_event_loop().time()
     if not force and (now - _subs_cache["ts"]) < SUBSCRIPTIONS_CACHE_TTL:
         return _subs_cache["channels"]
 
     token = (ADMIN_TOKEN or "").strip()
-    bot_id = (BOT_DB_ID or "").strip()
-    if not token or not bot_id:
+    if not token:
+        return _subs_cache["channels"]
+
+    bot_id = await _resolve_bot_db_id(bot_username)
+    if not bot_id:
         return _subs_cache["channels"]
 
     base = (ADMIN_API_BASE or "").rstrip("/")

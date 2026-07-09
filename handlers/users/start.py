@@ -3230,7 +3230,8 @@ async def check_subscriptions(user_id: int, bot) -> list:
     """Admin panelda faol qilingan har bir majburiy kanalni tekshiradi.
     Qaytadi: a'zo bo'lmagan kanallar ro'yxati (bo'sh [] — hammasiga a'zo yoki
     majburiy kanal umuman yo'q)."""
-    channels = await fetch_active_subscriptions()
+    me = await bot.get_me()
+    channels = await fetch_active_subscriptions(bot_username=me.username)
     if not channels:
         return []
 
