@@ -888,8 +888,8 @@ async def _resolve_bot_db_id(bot_username: Optional[str] = None) -> Optional[str
     my_token = (BOT_TOKEN or "").strip()
     found = None
     for b in bots:
-        preview = str(b.get("token_preview") or "").strip()
-        if preview and my_token and (my_token.startswith(preview) or preview in my_token):
+        preview = str(b.get("token_preview") or "").strip().rstrip(".")
+        if preview and my_token and my_token.startswith(preview):
             found = b
             break
     if not found and bot_username:
