@@ -194,10 +194,53 @@ async def send_post_to_users(callback_query: types.CallbackQuery, state: FSMCont
     channel = data["post_data"]["channel"]
     post_id = data["post_data"]["post_id"]
 
-    all_users = send_req.get_all_users()  # foydalanuvchi ro'yxati [{chat_id:...}, ...]
-    # print(all_users)
-    # time.sleep(10)
+    users_res = await send_req.get_all_users()  # {"ok": True, "data": [{chat_id:...}, ...]}
+    if isinstance(users_res, dict):
+        if not users_res.get("ok"):
+            await callback_query.message.edit_text(
+                f"❌ Foydalanuvchilar ro'yxatini olishda xato: {users_res.get('status')}"
+            )
+            await state.finish()
+            return
+        all_users = users_res.get("data") or []
+    else:
+        all_users = users_res or []
+    total = len(all_users)
     count, failed = 0, 0
+
+    # Real-time progress: har ~5% da yoki kamida har 25 tada bir marta
+    # xabarni yangilaymiz (Telegram edit rate-limit'iga tushmaslik uchun).
+    progress_step = max(25, total // 20) if total else 25
+    last_edited_text = None
+
+    def _progress_text(done, sent, fail, tot, finished=False):
+        head = "📢 Post yuborish yakunlandi ✅" if finished else "📢 Post yuborilmoqda..."
+        pct = int(done * 100 / tot) if tot else 100
+        bar_len = 10
+        filled = int(pct / 100 * bar_len)
+        bar = "█" * filled + "░" * (bar_len - filled)
+        return (
+            f"{head}\n\n"
+            f"[{bar}] {pct}%\n\n"
+            f"✅ Yuborilganlar: {sent}\n"
+            f"❌ Yuborilmaganlar: {fail}\n"
+            f"📤 Qayta ishlangan: {done}/{tot}\n"
+            f"👥 Jami: {tot}"
+        )
+
+    async def _edit_progress(done, finished=False):
+        nonlocal last_edited_text
+        text = _progress_text(done, count, failed, total, finished=finished)
+        if text == last_edited_text:
+            return
+        last_edited_text = text
+        try:
+            await callback_query.message.edit_text(text)
+        except Exception:
+            # MessageNotModified yoki flood — progressni to'xtatmaymiz
+            pass
+
+    await _edit_progress(0)
 
     for idx, user in enumerate(all_users, start=1):
         try:
@@ -212,16 +255,16 @@ async def send_post_to_users(callback_query: types.CallbackQuery, state: FSMCont
             failed += 1
             send_req.update_user_status(user['chat_id'], user['bot_id'], "blocked")
             print(f"User {user['chat_id']} ga yuborilmadi: {e}")
+
+        # Real-time progress yangilash
+        if idx % progress_step == 0:
+            await _edit_progress(idx)
+
         # har 100 tadan keyin 1 sekund kutish
         if idx % 100 == 0:
             await asyncio.sleep(1)
 
-    await callback_query.message.edit_text(
-        f"📢 Post foydalanuvchilarga yuborish tugadi ✅\n\n"
-        f"✅ Yuborilganlar: {count}\n"
-        f"❌ Yuborilmaganlar: {failed}\n"
-        f"👥 Jami: {len(all_users)}"
-    )
+    await _edit_progress(total, finished=True)
     await state.finish()
 
 
@@ -337,7 +380,11 @@ async def bot_starts(message: types.Message, state: FSMContext):
         return
     await state.finish()
     time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    count_of_users = send_req.get_all_users()
+    users_res = await send_req.get_all_users()
+    if isinstance(users_res, dict):
+        count_of_users = users_res.get("data") or [] if users_res.get("ok") else []
+    else:
+        count_of_users = users_res or []
     active = 0
     blocked = 0
     for user in count_of_users:
