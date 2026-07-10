@@ -200,31 +200,21 @@ async def send_post_to_users(callback_query: types.CallbackQuery, state: FSMCont
     count, failed = 0, 0
 
     for idx, user in enumerate(all_users, start=1):
-        chat_id = user['chat_id']
-        print(91, chat_id)
-        if chat_id == "935920479":
-        # if bot_id != 8:
-        #     continue
-            try:
-
-                await bot.forward_message(
-                    chat_id=user['chat_id'],
-                    from_chat_id=channel,
-                    message_id=post_id
-                )
-                count += 1
-                # updated = send_req.update_user(user['id'], user['chat_id'],user['firstname'], user['lastname'],user['bot_id'],user['username'],"active",user['created_at'])
-                send_req.update_user_status(user['chat_id'], user['bot_id'], "active")
-                # ic(f"User {user['chat_id']} ga yuborildi")
-            except Exception as e:
-                failed += 1
-                # ic(user)
-                send_req.update_user_status(user['chat_id'], user['bot_id'], "blocked")
-                # updated = send_req.update_user(user['id'], user['chat_id'],user['firstname'], user['lastname'],user['bot_id'],user['username'],"blocked",user['created_at'])
-                print(f"User {user['chat_id']} ga yuborilmadi: {e}")
-            # har 100 tadan keyin 1 sekund kutish
-            if idx % 100 == 0:
-                await asyncio.sleep(1)
+        try:
+            await bot.forward_message(
+                chat_id=user['chat_id'],
+                from_chat_id=channel,
+                message_id=post_id
+            )
+            count += 1
+            send_req.update_user_status(user['chat_id'], user['bot_id'], "active")
+        except Exception as e:
+            failed += 1
+            send_req.update_user_status(user['chat_id'], user['bot_id'], "blocked")
+            print(f"User {user['chat_id']} ga yuborilmadi: {e}")
+        # har 100 tadan keyin 1 sekund kutish
+        if idx % 100 == 0:
+            await asyncio.sleep(1)
 
     await callback_query.message.edit_text(
         f"📢 Post foydalanuvchilarga yuborish tugadi ✅\n\n"
