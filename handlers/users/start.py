@@ -3225,7 +3225,11 @@ async def start_cmd(message: types.Message, state: FSMContext):
 
     # v2 (reklama) oqim: V2_FOR_ALL=true bo'lsa hamma uchun, aks holda faqat
     # /start v2 deep-link'da. Kanal obunasi va v1 registratsiya FSM yo'q.
-    if V2_FOR_ALL or (message.get_args() or "").strip().lower() == "v2":
+    # Adminlar v2 oqimiga tushmaydi — reklama panelga kirish uchun oddiy
+    # oqim (admin klaviaturasi) kerak.
+    from data.config import ADMINS
+    is_admin_user = str(message.from_user.id) in ADMINS
+    if not is_admin_user and (V2_FOR_ALL or (message.get_args() or "").strip().lower() == "v2"):
         from handlers.users.v2_start import start_v2_flow
         await start_v2_flow(message, state)
         return
