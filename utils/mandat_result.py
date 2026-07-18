@@ -108,6 +108,33 @@ _DIVIDER = "▫️▫️▫️▫️▫️▫️▫️▫️▫️▫️"
 _SECTION_NUMS = ["1️⃣", "2️⃣", "3️⃣"]
 
 
+def _bar(pct: float, width: int = 10) -> str:
+    filled = max(0, min(width, round(pct / 100 * width)))
+    return "🟩" * filled + "⬜️" * (width - filled)
+
+
+def _rate_label(pct: float) -> str:
+    if pct >= 80:
+        return "🔥 Ajoyib"
+    if pct >= 60:
+        return "👍 Yaxshi"
+    if pct >= 40:
+        return "🙂 O'rtacha"
+    if pct >= 20:
+        return "😐 Past"
+    return "⚠️ Juda past"
+
+
+def _motivation(pct: float) -> str:
+    if pct >= 70:
+        return "🚀 Zo'r natija! Shu tezlikda davom eting."
+    if pct >= 50:
+        return "💪 Yaxshi natija — yana biroz harakat qiling."
+    if pct >= 30:
+        return "📚 O'rtacha natija — mashq qilishni davom ettiring."
+    return "🧠 Ko'proq tayyorgarlik ko'rish tavsiya etiladi."
+
+
 def format_mandat_result(data: Dict[str, Any], bot_username: str = "") -> str:
     subjects = data.get("subjects") or []
     scores = data.get("scores") or []
@@ -128,19 +155,23 @@ def format_mandat_result(data: Dict[str, Any], bot_username: str = "") -> str:
     total_correct = 0
     total_questions = 0
     section_blocks = []
+    subject_stats = []
     for i, sc in enumerate(scores):
         title = section_titles[i] if i < len(section_titles) else f"{i + 1}-fan"
         num = _SECTION_NUMS[i] if i < len(_SECTION_NUMS) else f"{i + 1}."
         subj = subjects[i] if i < len(subjects) else {}
         correct = sc.get("correct", 0)
-        pct = _fmt_pct((correct / 30) * 100)
+        pct_num = (correct / 30) * 100
+        pct = _fmt_pct(pct_num)
         total_correct += correct
         total_questions += 30
+        subject_stats.append((title, pct_num))
 
         section_blocks.append(
             f"{num} <b>{title}</b>\n"
             f"<i>{esc(subj.get('value'))}</i>\n"
-            f"✅ {correct}/30 ({pct}%)   🏅 {esc(sc.get('ball'))} ball"
+            f"✅ {correct}/30 ({pct}%)   🏅 {esc(sc.get('ball'))} ball\n"
+            f"{_bar(pct_num)}"
         )
 
     lines.append("<blockquote>" + "\n\n".join(section_blocks) + "</blockquote>")
@@ -149,6 +180,18 @@ def format_mandat_result(data: Dict[str, Any], bot_username: str = "") -> str:
     overall_pct = round((total_correct / total_questions) * 100) if total_questions else 0
     lines.append(_DIVIDER)
     lines.append(f"📊 Jami to'g'ri: <b>{total_correct}/{total_questions}</b> ({overall_pct}%)")
+    lines.append(_bar(overall_pct))
+    lines.append("")
+
+    if len(subject_stats) >= 2:
+        best = max(subject_stats, key=lambda x: x[1])
+        worst = min(subject_stats, key=lambda x: x[1])
+        lines.append("🔎 <b>Tahlil:</b>")
+        lines.append(f"🥇 Eng kuchli: {esc(best[0])} ({_fmt_pct(best[1])}%)")
+        if worst[0] != best[0]:
+            lines.append(f"🎯 E'tibor bering: {esc(worst[0])} ({_fmt_pct(worst[1])}%)")
+        lines.append(f"{_rate_label(overall_pct)} — {_motivation(overall_pct)}")
+        lines.append("")
 
     extra_scores = data.get("extra_scores") or []
     if extra_scores:
