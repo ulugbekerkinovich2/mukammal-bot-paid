@@ -4526,7 +4526,9 @@ MANDAT_ERROR_TEXT = "❌ Natijani olishda xatolik yuz berdi. Keyinroq qayta urin
 
 
 @dp.message_handler(Command("natijani_bilish"), state="*")
+@dp.message_handler(Command("dtm_natija"), state="*")
 @dp.message_handler(Text(equals="🎓 Natijani bilish"), state="*")
+@dp.message_handler(Text(equals="🎓 DTM natija"), state="*")
 async def mandat_result_entry(message: types.Message, state: FSMContext):
     await state.finish()
     not_joined = await check_subscriptions(message.from_user.id, message.bot)
