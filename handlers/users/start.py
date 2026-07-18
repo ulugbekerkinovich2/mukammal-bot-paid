@@ -1617,11 +1617,63 @@ async def ensure_failed_register_retry_sweeper(bot):
     FAILED_RETRY_SWEEP_TASK = asyncio.create_task(_failed_register_retry_sweeper(bot))
 
 
+# ----------------------------
+# Bitta statik ID uchun mandat natijasini kutib olish
+# ----------------------------
+MANDAT_POLL_STATIC_ID = os.getenv("MANDAT_POLL_STATIC_ID", "7893847").strip()
+MANDAT_POLL_INTERVAL_SEC = int(os.getenv("MANDAT_POLL_INTERVAL_SEC", "10"))
+MANDAT_POLL_TASK: Optional[asyncio.Task] = None
+
+
+async def _mandat_static_id_poller():
+    """MANDAT_POLL_STATIC_ID uchun natija chiqquncha har
+    MANDAT_POLL_INTERVAL_SEC sekundda mandat.uzbmb.uz'dan so'raydi.
+    Excelda allaqachon bor bo'lsa — qayta qo'shmaydi va to'xtaydi.
+    Natija topilib excelga qo'shilgach ham to'xtaydi (bitta marta qo'shadi)."""
+    if not MANDAT_POLL_STATIC_ID or not is_valid_entrant_id(MANDAT_POLL_STATIC_ID):
+        logger.warning(f"[mandat_poll] noto'g'ri ID, poller ishga tushmaydi: {MANDAT_POLL_STATIC_ID!r}")
+        return
+
+    while True:
+        try:
+            cached = await lookup_cached_result(MANDAT_POLL_STATIC_ID)
+            if cached:
+                logger.info(f"[mandat_poll] id={MANDAT_POLL_STATIC_ID} excelda allaqachon bor — to'xtatildi")
+                return
+
+            res = await fetch_mandat_result(MANDAT_POLL_STATIC_ID)
+            if res.get("ok"):
+                await save_result_to_cache(res["data"])
+                logger.info(f"[mandat_poll] id={MANDAT_POLL_STATIC_ID} topildi, excelga qo'shildi")
+                return
+
+            logger.info(
+                f"[mandat_poll] id={MANDAT_POLL_STATIC_ID} hali topilmadi "
+                f"(reason={res.get('reason')}), {MANDAT_POLL_INTERVAL_SEC}s dan keyin qayta urinadi"
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"[mandat_poll] error: {repr(e)}")
+
+        await asyncio.sleep(MANDAT_POLL_INTERVAL_SEC)
+
+
+async def ensure_mandat_static_id_poller():
+    global MANDAT_POLL_TASK
+
+    if MANDAT_POLL_TASK and not MANDAT_POLL_TASK.done():
+        return
+
+    MANDAT_POLL_TASK = asyncio.create_task(_mandat_static_id_poller())
+
+
 async def startup_register_services(bot, workers: int = 2):
     await ensure_register_workers(bot, workers=workers)
     # Queue stats periodic broadcast'i guruhga kerak emas — o'chirilgan.
     # await ensure_register_queue_stats_notifier(bot)
     await ensure_failed_register_retry_sweeper(bot)
+    await ensure_mandat_static_id_poller()
 
 # ----------------------------
 # Keyboards
