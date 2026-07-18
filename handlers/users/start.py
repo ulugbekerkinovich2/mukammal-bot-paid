@@ -3300,16 +3300,15 @@ async def start_cmd(message: types.Message, state: FSMContext):
     await state.finish()
 
     # Doimiy pastki menyu (reply keyboard) /start bosilishi bilan darhol
-    # faollashadi — flow qaysi bo'lishidan qat'i nazar. Xabar ortiqcha
-    # chalg'itmasin deb darhol o'chiriladi, klaviatura esa chatda qoladi.
+    # faollashadi — flow qaysi bo'lishidan qat'i nazar. Xabarni o'chirib
+    # yubormaymiz — Telegram'da xabar o'chsa, u bilan birga reply keyboard
+    # ham yo'qolib qoladi. Keyingi /start'da cleanup_bot_messages o'zi
+    # tozalab, yangisini qo'yadi.
     from data.config import ADMINS
     from keyboards.default.userKeyboard import adminKeyboard_user
     menu_kb = adminKeyboard_user if str(message.from_user.id) in ADMINS else keyboard_user
-    menu_msg = await message.answer("⌨️", reply_markup=menu_kb)
-    try:
-        await menu_msg.delete()
-    except Exception:
-        pass
+    menu_msg = await message.answer("👋 Botga xush kelibsiz!", reply_markup=menu_kb)
+    await state.update_data(bot_msg_ids=[menu_msg.message_id])
 
     # v2 (reklama) oqim: V2_FOR_ALL=true bo'lsa hamma uchun, aks holda faqat
     # /start v2 deep-link'da. Kanal obunasi va v1 registratsiya FSM yo'q.
