@@ -2623,7 +2623,31 @@ async def v2_pick_lang(call: types.CallbackQuery, state: FSMContext):
     if lang not in ("uz", "ru"):
         lang = "uz"
     await state.update_data(exam_lang=lang)
+
+    try:
+        await call.message.edit_text(tr(lang, "flow_choose"), reply_markup=flow_choice_kb(lang))
+    except Exception:
+        await call.message.answer(tr(lang, "flow_choose"), reply_markup=flow_choice_kb(lang))
+
+
+@dp.callback_query_handler(lambda c: c.data == "flow:test", state=OnlineV2.exam_lang)
+async def v2_pick_flow_test(call: types.CallbackQuery, state: FSMContext):
+    await call.answer()
     await _v2_show_subjects(call.message, state, edit=True)
+
+
+@dp.callback_query_handler(lambda c: c.data == "flow:mandat", state=OnlineV2.exam_lang)
+async def v2_pick_flow_mandat(call: types.CallbackQuery, state: FSMContext):
+    await call.answer()
+
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
+
+    await state.finish()
+    await call.bot.send_message(call.message.chat.id, MANDAT_ASK_ID_TEXT, parse_mode="HTML")
+    await MandatResult.waiting_id.set()
 
 
 @dp.callback_query_handler(lambda c: c.data and c.data.startswith("v2pair:"), state=OnlineV2.first_subject)
