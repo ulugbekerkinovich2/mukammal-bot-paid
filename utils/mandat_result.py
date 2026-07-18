@@ -104,58 +104,66 @@ def _fmt_pct(value: float, decimals: int = 1) -> str:
     return s.replace(".", ",")
 
 
+_DIVIDER = "▫️▫️▫️▫️▫️▫️▫️▫️▫️▫️"
+_SECTION_NUMS = ["1️⃣", "2️⃣", "3️⃣"]
+
+
 def format_mandat_result(data: Dict[str, Any], bot_username: str = "") -> str:
     subjects = data.get("subjects") or []
     scores = data.get("scores") or []
 
     section_titles = ["Majburiy fanlar", "1-mutaxassislik fani", "2-mutaxassislik fani"]
 
+    esc = lambda s: html.escape(s or "", quote=False)
+
     lines = [
-        "🎓 <b>IMTIHON NATIJASI</b>",
+        "🎓 <b>DTM IMTIHON NATIJASI</b>",
+        _DIVIDER,
         "",
-        f"👤 {html.escape(data.get('full_name') or '', quote=False)}",
-        f"🆔 ID: {html.escape(data.get('entrant_id') or '', quote=False)}",
-        f"📝 Ta'lim tili: {html.escape(data.get('lang') or '', quote=False)}",
-        "",
-        "📚 Fanlar bo'yicha javoblar:",
+        f"👤 <b>{esc(data.get('full_name'))}</b>",
+        f"🆔 ID: <code>{esc(data.get('entrant_id'))}</code>   📝 {esc(data.get('lang'))}",
         "",
     ]
 
     total_correct = 0
     total_questions = 0
+    section_blocks = []
     for i, sc in enumerate(scores):
         title = section_titles[i] if i < len(section_titles) else f"{i + 1}-fan"
+        num = _SECTION_NUMS[i] if i < len(_SECTION_NUMS) else f"{i + 1}."
         subj = subjects[i] if i < len(subjects) else {}
         correct = sc.get("correct", 0)
         pct = _fmt_pct((correct / 30) * 100)
         total_correct += correct
         total_questions += 30
 
-        lines.append(f"{i + 1}. {title}")
-        lines.append(f"• {html.escape(subj.get('value') or '', quote=False)}")
-        lines.append(f"• To'g'ri: {correct}/30 ({pct}%)")
-        lines.append(f"• Ball: {html.escape(sc.get('ball') or '', quote=False)}")
-        lines.append("")
+        section_blocks.append(
+            f"{num} <b>{title}</b>\n"
+            f"<i>{esc(subj.get('value'))}</i>\n"
+            f"✅ {correct}/30 ({pct}%)   🏅 {esc(sc.get('ball'))} ball"
+        )
+
+    lines.append("<blockquote>" + "\n\n".join(section_blocks) + "</blockquote>")
+    lines.append("")
 
     overall_pct = round((total_correct / total_questions) * 100) if total_questions else 0
-    lines.append(f"✅ To'g'ri javoblar: {total_correct}/{total_questions} ({overall_pct}%)")
-    lines.append("")
+    lines.append(_DIVIDER)
+    lines.append(f"📊 Jami to'g'ri: <b>{total_correct}/{total_questions}</b> ({overall_pct}%)")
 
     extra_scores = data.get("extra_scores") or []
     if extra_scores:
-        lines.append("🟢 Qo'shimcha ballar:")
-        for label, val in extra_scores:
-            lines.append(f"• {html.escape(label, quote=False)}: {html.escape(val, quote=False)}")
-        lines.append("")
+        extras_str = "   ".join(f"{esc(label)}: {esc(val)}" for label, val in extra_scores)
+        lines.append(f"🟢 {extras_str}")
 
     if data.get("total_ball"):
-        lines.append(f"🏆 UMUMIY BALL: {html.escape(data['total_ball'], quote=False)}")
         lines.append("")
+        lines.append(f"🏆 <b>UMUMIY BALL: {esc(data['total_ball'])}</b>")
+
+    lines.append(_DIVIDER)
 
     if bot_username:
         uname = bot_username.lstrip("@")
+        lines.append("")
         lines.append(f"👨‍💻 Natijalar @{uname} orqali tekshirildi")
-        lines.append(f"👉 @{uname}")
-        lines.append(f"👉 @{uname}")
 
     return "\n".join(lines).rstrip()
