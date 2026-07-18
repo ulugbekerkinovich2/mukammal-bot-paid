@@ -1,7 +1,8 @@
 from aiogram.dispatcher.filters.state import State, StatesGroup
 
 class Registration(StatesGroup):
-    ui_lang = State()            
+    ui_lang = State()
+    flow_choice = State()
     first_name = State()
     last_name = State()
     phone = State()

@@ -269,6 +269,13 @@ RU_CLASS_LETTERS = [
 TEXTS = {
     "choose_ui_lang": {"uz": "Tilni tanlang:", "ru": "Выберите язык:"},
 
+    "flow_choose": {
+        "uz": "Nima qilmoqchisiz?",
+        "ru": "Что хотите сделать?",
+    },
+    "btn_flow_test": {"uz": "🧪 Test ishlash", "ru": "🧪 Пройти тест"},
+    "btn_flow_dtm_result": {"uz": "🎓 DTM natijasini bilish", "ru": "🎓 Узнать результат DTM"},
+
     "phone_ask": {
         "uz": "Telefon raqamingizni yuboring yoki qo‘lda yozing.\nNamuna: 941234567 (yoki +998941234567)",
         "ru": "Отправьте номер телефона или введите вручную.\nПример: 941234567 (или +998941234567)",
@@ -1626,6 +1633,13 @@ def ui_lang_kb(show_result_btn=False):
         InlineKeyboardButton("🇷🇺 Русский", callback_data="ui:ru"),
     )
     kb.add(InlineKeyboardButton("❌ Cancel", callback_data="reg_cancel"))
+    return kb
+
+
+def flow_choice_kb(ui_lang: str) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup(row_width=1)
+    kb.add(InlineKeyboardButton(tr(ui_lang, "btn_flow_test"), callback_data="flow:test"))
+    kb.add(InlineKeyboardButton(tr(ui_lang, "btn_flow_dtm_result"), callback_data="flow:mandat"))
     return kb
 
 
@@ -3459,12 +3473,49 @@ async def pick_ui_language(call: types.CallbackQuery, state: FSMContext):
 
     msg = await call.bot.send_message(
         call.message.chat.id,
+        tr(ui_lang, "flow_choose"),
+        reply_markup=flow_choice_kb(ui_lang),
+        disable_web_page_preview=True
+    )
+    await state.update_data(bot_msg_ids=[msg.message_id])
+    await Registration.flow_choice.set()
+
+
+@dp.callback_query_handler(lambda c: c.data == "flow:test", state=Registration.flow_choice)
+async def pick_flow_test(call: types.CallbackQuery, state: FSMContext):
+    await call.answer()
+    data = await state.get_data()
+    ui_lang = data.get("ui_lang", "uz")
+
+    await cleanup_bot_messages(call.bot, call.message.chat.id, state, except_ids={call.message.message_id})
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
+
+    msg = await call.bot.send_message(
+        call.message.chat.id,
         tr(ui_lang, "phone_ask"),
         reply_markup=keyboard_user,
         disable_web_page_preview=True
     )
     await state.update_data(bot_msg_ids=[msg.message_id])
     await Registration.phone.set()
+
+
+@dp.callback_query_handler(lambda c: c.data == "flow:mandat", state=Registration.flow_choice)
+async def pick_flow_mandat(call: types.CallbackQuery, state: FSMContext):
+    await call.answer()
+
+    await cleanup_bot_messages(call.bot, call.message.chat.id, state, except_ids={call.message.message_id})
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
+
+    await state.finish()
+    await call.bot.send_message(call.message.chat.id, MANDAT_ASK_ID_TEXT, parse_mode="HTML")
+    await MandatResult.waiting_id.set()
 
 @dp.message_handler(content_types=types.ContentType.CONTACT, state=Registration.phone)
 async def reg_phone_contact(message: types.Message, state: FSMContext):
@@ -4518,9 +4569,9 @@ async def show_my_result(message: types.Message, state: FSMContext):
 MANDAT_ASK_ID_TEXT = (
     "🎓 <b>DTM imtihon natijasi</b>\n\n"
     "Abituriyent ID raqamingizni yuboring.\n"
-    "Namuna: <code>7475327</code>"
+    "Namuna: <code>1234567</code>"
 )
-MANDAT_INVALID_ID_TEXT = "❌ ID xato. Faqat raqamlardan iborat bo'lishi kerak.\nNamuna: <code>7475327</code>"
+MANDAT_INVALID_ID_TEXT = "❌ ID xato. Faqat raqamlardan iborat bo'lishi kerak.\nNamuna: <code>1234567</code>"
 MANDAT_NOT_FOUND_TEXT = "❌ Bu ID bo'yicha natija topilmadi. ID raqamini tekshirib qayta yuboring."
 MANDAT_ERROR_TEXT = "❌ Natijani olishda xatolik yuz berdi. Keyinroq qayta urinib ko'ring."
 
