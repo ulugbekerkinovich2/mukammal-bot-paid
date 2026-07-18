@@ -3299,6 +3299,18 @@ async def start_cmd(message: types.Message, state: FSMContext):
     await _v2_cleanup(message.bot, message.chat.id, state)  # v2 oqim oraliq xabarlari
     await state.finish()
 
+    # Doimiy pastki menyu (reply keyboard) /start bosilishi bilan darhol
+    # faollashadi — flow qaysi bo'lishidan qat'i nazar. Xabar ortiqcha
+    # chalg'itmasin deb darhol o'chiriladi, klaviatura esa chatda qoladi.
+    from data.config import ADMINS
+    from keyboards.default.userKeyboard import adminKeyboard_user
+    menu_kb = adminKeyboard_user if str(message.from_user.id) in ADMINS else keyboard_user
+    menu_msg = await message.answer("⌨️", reply_markup=menu_kb)
+    try:
+        await menu_msg.delete()
+    except Exception:
+        pass
+
     # v2 (reklama) oqim: V2_FOR_ALL=true bo'lsa hamma uchun, aks holda faqat
     # /start v2 deep-link'da. Kanal obunasi va v1 registratsiya FSM yo'q.
     if V2_FOR_ALL or (message.get_args() or "").strip().lower() == "v2":
