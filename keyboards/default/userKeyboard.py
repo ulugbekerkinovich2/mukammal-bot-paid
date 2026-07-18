@@ -4,6 +4,7 @@ keyboard_user = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton("📞Raqamni yuborish", request_contact=True)],
         [KeyboardButton("📊 Mening natijam")],
+        [KeyboardButton("🎓 Natijani bilish")],
     ],
     resize_keyboard=True,
 )
@@ -25,6 +26,7 @@ adminKeyboard_user = ReplyKeyboardMarkup(
         [KeyboardButton("📊 Admin Panel")],
         [KeyboardButton("📞Raqamni yuborish", request_contact=True)],
         [KeyboardButton("📊 Mening natijam")],
+        [KeyboardButton("🎓 Natijani bilish")],
     ],
     resize_keyboard=True,
 )

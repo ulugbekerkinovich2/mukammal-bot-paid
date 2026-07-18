@@ -25,7 +25,9 @@ from aiogram.types import (
 
 from loader import dp
 from keyboards.default.userKeyboard import keyboard_user
-from states.userStates import Registration, OnlineV2
+from states.userStates import Registration, OnlineV2, MandatResult
+from utils.mandat_result import fetch_mandat_result, format_mandat_result, is_valid_entrant_id
+from utils.mandat_excel import lookup_cached_result, save_result_to_cache, excel_file_exists, EXCEL_PATH
 from data.config import SUBJECTS_MAP
 from keyboards.inline.user_inline import language_keyboard_button, gender_kb
 
@@ -4508,6 +4510,112 @@ async def show_my_result(message: types.Message, state: FSMContext):
         await message.answer("❌ Natijani yuklashda texnik xatolik yuz berdi.")
         try: await msg.delete()
         except: pass
+
+
+# ----------------------------
+# Mandat natijasi (mandat.uzbmb.uz, abituriyent ID orqali)
+# ----------------------------
+MANDAT_ASK_ID_TEXT = (
+    "🎓 <b>DTM imtihon natijasi</b>\n\n"
+    "Abituriyent ID raqamingizni yuboring.\n"
+    "Namuna: <code>7475327</code>"
+)
+MANDAT_INVALID_ID_TEXT = "❌ ID xato. Faqat raqamlardan iborat bo'lishi kerak.\nNamuna: <code>7475327</code>"
+MANDAT_NOT_FOUND_TEXT = "❌ Bu ID bo'yicha natija topilmadi. ID raqamini tekshirib qayta yuboring."
+MANDAT_ERROR_TEXT = "❌ Natijani olishda xatolik yuz berdi. Keyinroq qayta urinib ko'ring."
+
+
+@dp.message_handler(Command("natijani_bilish"), state="*")
+@dp.message_handler(Text(equals="🎓 Natijani bilish"), state="*")
+async def mandat_result_entry(message: types.Message, state: FSMContext):
+    await state.finish()
+    not_joined = await check_subscriptions(message.from_user.id, message.bot)
+    if not_joined:
+        await message.answer(
+            "Botdan foydalanish uchun rasmiy kanalimizga a'zo bo'ling! ✅",
+            reply_markup=sub_kb(not_joined, check_callback="check_sub_mandat"),
+        )
+        return
+
+    await message.answer(MANDAT_ASK_ID_TEXT, parse_mode="HTML")
+    await MandatResult.waiting_id.set()
+
+
+@dp.callback_query_handler(lambda c: c.data == "check_sub_mandat", state="*")
+async def mandat_check_sub_cb(call: types.CallbackQuery, state: FSMContext):
+    not_joined = await check_subscriptions(call.from_user.id, call.bot)
+    if not_joined:
+        await call.answer("Hali obuna emassiz. Avval obuna bo’ling ✅", show_alert=True)
+        return
+
+    await call.answer("✅ Obuna tasdiqlandi")
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
+
+    await call.bot.send_message(call.message.chat.id, MANDAT_ASK_ID_TEXT, parse_mode="HTML")
+    await MandatResult.waiting_id.set()
+
+
+@dp.message_handler(state=MandatResult.waiting_id)
+async def mandat_receive_id(message: types.Message, state: FSMContext):
+    entrant_id = (message.text or "").strip()
+
+    if not is_valid_entrant_id(entrant_id):
+        await message.answer(MANDAT_INVALID_ID_TEXT, parse_mode="HTML")
+        return
+
+    cached = await lookup_cached_result(entrant_id)
+    if cached:
+        me = await message.bot.get_me()
+        text = format_mandat_result(cached, bot_username=me.username or "")
+        await state.finish()
+        await message.answer(text, parse_mode="HTML", disable_web_page_preview=True)
+        return
+
+    progress = await message.answer("⏳ Natija qidirilmoqda, biroz kuting...")
+
+    res = await fetch_mandat_result(entrant_id)
+
+    try:
+        await progress.delete()
+    except Exception:
+        pass
+
+    if not res.get("ok"):
+        reason = res.get("reason")
+        if reason == "not_found":
+            await message.answer(MANDAT_NOT_FOUND_TEXT)
+        else:
+            logger.error(f"[mandat] fetch failed reason={reason} entrant_id={entrant_id}")
+            await message.answer(MANDAT_ERROR_TEXT)
+        return
+
+    await save_result_to_cache(res["data"])
+
+    me = await message.bot.get_me()
+    text = format_mandat_result(res["data"], bot_username=me.username or "")
+
+    await state.finish()
+    await message.answer(text, parse_mode="HTML", disable_web_page_preview=True)
+
+
+@dp.message_handler(Command("export_excel"), state="*")
+async def export_mandat_excel(message: types.Message, state: FSMContext):
+    from data.config import ADMINS
+
+    if str(message.from_user.id) not in ADMINS:
+        return
+
+    if not excel_file_exists():
+        await message.answer("❌ Hali hech qanday natija yig'ilmagan.")
+        return
+
+    await message.answer_document(
+        types.InputFile(EXCEL_PATH),
+        caption="📊 Yig'ilgan DTM natijalari (mandat.uzbmb.uz)",
+    )
 
 
 @dp.message_handler(Command("sertifikat_qollanma"), state="*")

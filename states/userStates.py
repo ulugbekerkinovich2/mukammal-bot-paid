@@ -22,6 +22,10 @@ class Registration(StatesGroup):
     gender = State()
 
 
+class MandatResult(StatesGroup):
+    waiting_id = State()
+
+
 class OnlineV2(StatesGroup):
     # v2 (reklama) oqim: bot fanlarni so'raydi → v2/start → WebApp test →
     # web_app_data → forma → v2/complete.
