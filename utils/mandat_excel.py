@@ -1,11 +1,14 @@
 import asyncio
 import json
+import logging
 import os
 import shutil
 from datetime import datetime
 from typing import Any, Dict, Optional
 
 from openpyxl import Workbook, load_workbook
+
+logger = logging.getLogger(__name__)
 
 EXCEL_PATH = os.getenv("MANDAT_RESULTS_XLSX", "mandat_results.xlsx")
 
@@ -167,38 +170,46 @@ def _data_from_row(row) -> Dict[str, Any]:
 
 
 def _sync_lookup(entrant_id: str) -> Optional[Dict[str, Any]]:
-    _ensure_workbook()
-    wb = load_workbook(EXCEL_PATH, read_only=True)
     try:
-        ws = wb["results"]
-        for row in ws.iter_rows(min_row=2, values_only=True):
-            if row and str(row[0]) == str(entrant_id):
-                return _data_from_row(row)
-    finally:
-        wb.close()
+        _ensure_workbook()
+        wb = load_workbook(EXCEL_PATH, read_only=True)
+        try:
+            ws = wb["results"]
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                if row and str(row[0]) == str(entrant_id):
+                    return _data_from_row(row)
+        finally:
+            wb.close()
+    except Exception as e:
+        logger.error("[mandat_excel] lookup failed: %r", e)
     return None
 
 
 def _sync_save(data: Dict[str, Any]) -> None:
-    _ensure_workbook()
-    wb = load_workbook(EXCEL_PATH)
-    ws = wb["results"]
+    """Excelga saqlashda xatolik bo'lsa ham throw qilmaydi — natijani
+    userga berish excel yozuviga bog'liq bo'lmasligi kerak."""
+    try:
+        _ensure_workbook()
+        wb = load_workbook(EXCEL_PATH)
+        ws = wb["results"]
 
-    entrant_id = str(data.get("entrant_id") or "")
-    target_row_idx = None
-    for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-        if row and str(row[0]) == entrant_id:
-            target_row_idx = idx
-            break
+        entrant_id = str(data.get("entrant_id") or "")
+        target_row_idx = None
+        for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+            if row and str(row[0]) == entrant_id:
+                target_row_idx = idx
+                break
 
-    new_row = _row_from_data(data)
-    if target_row_idx:
-        for col, value in enumerate(new_row, start=1):
-            ws.cell(row=target_row_idx, column=col, value=value)
-    else:
-        ws.append(new_row)
+        new_row = _row_from_data(data)
+        if target_row_idx:
+            for col, value in enumerate(new_row, start=1):
+                ws.cell(row=target_row_idx, column=col, value=value)
+        else:
+            ws.append(new_row)
 
-    wb.save(EXCEL_PATH)
+        wb.save(EXCEL_PATH)
+    except Exception as e:
+        logger.error("[mandat_excel] save failed entrant_id=%s: %r", data.get("entrant_id"), e)
 
 
 async def lookup_cached_result(entrant_id: str) -> Optional[Dict[str, Any]]:

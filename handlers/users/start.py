@@ -4654,39 +4654,59 @@ async def mandat_receive_id(message: types.Message, state: FSMContext):
         await message.answer(MANDAT_INVALID_ID_TEXT, parse_mode="HTML")
         return
 
-    cached = await lookup_cached_result(entrant_id)
-    if cached:
+    progress = None
+    try:
+        # Cache va API bilan ishlaydigan funksiyalar (lookup_cached_result,
+        # fetch_mandat_result, save_result_to_cache) ichkarida xatolarni
+        # o'zlari ushlab, throw qilmasdan qaytaradi — shu try/except esa
+        # kutilmagan holatlar (masalan get_me/format/send xatosi) uchun
+        # oxirgi himoya qatlami: bot handler ichida qulab tushmaydi.
+        cached = await lookup_cached_result(entrant_id)
+        if cached:
+            me = await message.bot.get_me()
+            text = format_mandat_result(cached, bot_username=me.username or "")
+            await state.finish()
+            await message.answer(text, parse_mode="HTML", disable_web_page_preview=True)
+            return
+
+        progress = await message.answer("⏳ Natija qidirilmoqda, biroz kuting...")
+
+        res = await fetch_mandat_result(entrant_id)
+
+        try:
+            await progress.delete()
+        except Exception:
+            pass
+        progress = None
+
+        if not res.get("ok"):
+            reason = res.get("reason")
+            if reason == "not_found":
+                await message.answer(MANDAT_NOT_FOUND_TEXT)
+            else:
+                logger.error(f"[mandat] fetch failed reason={reason} entrant_id={entrant_id}")
+                await message.answer(MANDAT_ERROR_TEXT)
+            return
+
+        await save_result_to_cache(res["data"])
+
         me = await message.bot.get_me()
-        text = format_mandat_result(cached, bot_username=me.username or "")
+        text = format_mandat_result(res["data"], bot_username=me.username or "")
+
         await state.finish()
         await message.answer(text, parse_mode="HTML", disable_web_page_preview=True)
-        return
 
-    progress = await message.answer("⏳ Natija qidirilmoqda, biroz kuting...")
-
-    res = await fetch_mandat_result(entrant_id)
-
-    try:
-        await progress.delete()
-    except Exception:
-        pass
-
-    if not res.get("ok"):
-        reason = res.get("reason")
-        if reason == "not_found":
-            await message.answer(MANDAT_NOT_FOUND_TEXT)
-        else:
-            logger.error(f"[mandat] fetch failed reason={reason} entrant_id={entrant_id}")
+    except Exception as e:
+        logger.error(f"[mandat] unexpected error entrant_id={entrant_id}: {repr(e)}")
+        if progress:
+            try:
+                await progress.delete()
+            except Exception:
+                pass
+        try:
             await message.answer(MANDAT_ERROR_TEXT)
-        return
-
-    await save_result_to_cache(res["data"])
-
-    me = await message.bot.get_me()
-    text = format_mandat_result(res["data"], bot_username=me.username or "")
-
-    await state.finish()
-    await message.answer(text, parse_mode="HTML", disable_web_page_preview=True)
+        except Exception:
+            pass
 
 
 @dp.message_handler(Command("export_excel"), state="*")
@@ -4696,14 +4716,18 @@ async def export_mandat_excel(message: types.Message, state: FSMContext):
     if str(message.from_user.id) not in ADMINS:
         return
 
-    if not excel_file_exists():
-        await message.answer("❌ Hali hech qanday natija yig'ilmagan.")
-        return
+    try:
+        if not excel_file_exists():
+            await message.answer("❌ Hali hech qanday natija yig'ilmagan.")
+            return
 
-    await message.answer_document(
-        types.InputFile(EXCEL_PATH),
-        caption="📊 Yig'ilgan DTM natijalari (mandat.uzbmb.uz)",
-    )
+        await message.answer_document(
+            types.InputFile(EXCEL_PATH),
+            caption="📊 Yig'ilgan DTM natijalari (mandat.uzbmb.uz)",
+        )
+    except Exception as e:
+        logger.error(f"[mandat] export_excel error: {repr(e)}")
+        await message.answer("❌ Excel faylni yuborishda xatolik yuz berdi.")
 
 
 @dp.message_handler(Command("sertifikat_qollanma"), state="*")
