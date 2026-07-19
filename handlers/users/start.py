@@ -1652,7 +1652,7 @@ async def _mandat_static_id_poller():
                 return
 
             logger.info(
-                f"[mandat_poll] id={MANDAT_POLL_STATIC_ID} hali topilmadi "
+                f"[mandat_poll] id={entrant_id} hali topilmadi "
                 f"(reason={res.get('reason')}), {MANDAT_POLL_INTERVAL_SEC}s dan keyin qayta urinadi"
             )
         except asyncio.CancelledError:
