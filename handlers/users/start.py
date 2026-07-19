@@ -1649,12 +1649,14 @@ async def _mandat_static_id_poller():
             if res.get("ok"):
                 await save_result_to_cache(res["data"])
                 logger.info(f"[mandat_poll] id={entrant_id} topildi, excelga qo'shildi")
-                return
+            else:
+                logger.info(
+                    f"[mandat_poll] id={entrant_id} hali topilmadi "
+                    f"(reason={res.get('reason')})"
+                )
 
-            logger.info(
-                f"[mandat_poll] id={entrant_id} hali topilmadi "
-                f"(reason={res.get('reason')}), {MANDAT_POLL_INTERVAL_SEC}s dan keyin qayta urinadi"
-            )
+            count += 1
+            await asyncio.sleep(MANDAT_POLL_INTERVAL_SEC)
         except asyncio.CancelledError:
             raise
         except Exception as e:
