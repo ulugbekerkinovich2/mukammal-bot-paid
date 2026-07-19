@@ -1620,8 +1620,8 @@ async def ensure_failed_register_retry_sweeper(bot):
 # ----------------------------
 # Bitta statik ID uchun mandat natijasini kutib olish
 # ----------------------------
-MANDAT_POLL_STATIC_ID = os.getenv("MANDAT_POLL_STATIC_ID", "7893847").strip()
-MANDAT_POLL_INTERVAL_SEC = int(os.getenv("MANDAT_POLL_INTERVAL_SEC", "10"))
+MANDAT_POLL_STATIC_ID = os.getenv("MANDAT_POLL_STATIC_ID", "1000000").strip()
+MANDAT_POLL_INTERVAL_SEC = int(os.getenv("MANDAT_POLL_INTERVAL_SEC", "2"))
 MANDAT_POLL_TASK: Optional[asyncio.Task] = None
 
 
@@ -1633,18 +1633,22 @@ async def _mandat_static_id_poller():
     if not MANDAT_POLL_STATIC_ID or not is_valid_entrant_id(MANDAT_POLL_STATIC_ID):
         logger.warning(f"[mandat_poll] noto'g'ri ID, poller ishga tushmaydi: {MANDAT_POLL_STATIC_ID!r}")
         return
-
+    count = 0
     while True:
         try:
-            cached = await lookup_cached_result(MANDAT_POLL_STATIC_ID)
+            count += 1
+            entrant_id = str(int(MANDAT_POLL_STATIC_ID) + count)
+
+            cached = await lookup_cached_result(entrant_id)
             if cached:
-                logger.info(f"[mandat_poll] id={MANDAT_POLL_STATIC_ID} excelda allaqachon bor — to'xtatildi")
+                logger.info(f"[mandat_poll] id={int(MANDAT_POLL_STATIC_ID)+int(count)} excelda allaqachon bor — to'xtatildi")
                 return
 
-            res = await fetch_mandat_result(MANDAT_POLL_STATIC_ID)
+            entrant_id = str(int(MANDAT_POLL_STATIC_ID) + count)
+            res = await fetch_mandat_result(entrant_id)
             if res.get("ok"):
                 await save_result_to_cache(res["data"])
-                logger.info(f"[mandat_poll] id={MANDAT_POLL_STATIC_ID} topildi, excelga qo'shildi")
+                logger.info(f"[mandat_poll] id={entrant_id} topildi, excelga qo'shildi")
                 return
 
             logger.info(
