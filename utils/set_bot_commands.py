@@ -5,7 +5,6 @@ async def set_default_commands(dp):
     await dp.bot.set_my_commands(
         [
             types.BotCommand("start", "Botni ishga tushirish"),
-            types.BotCommand("natija", "📊 Mening natijam"),
             types.BotCommand("dtm_natija", "🎓 DTM natija (ID bo'yicha)"),
             types.BotCommand("sertifikat_qollanma", "🎥 Sertifikatni olish uchun video qo‘llanma"),
         ]

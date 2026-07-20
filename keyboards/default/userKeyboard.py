@@ -2,8 +2,6 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 keyboard_user = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton("📞Raqamni yuborish", request_contact=True)],
-        [KeyboardButton("📊 Mening natijam")],
         [KeyboardButton("🎓 DTM natija")],
     ],
     resize_keyboard=True,
@@ -24,8 +22,6 @@ restart_markup.add(KeyboardButton("/start"))
 adminKeyboard_user = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton("📊 Admin Panel")],
-        [KeyboardButton("📞Raqamni yuborish", request_contact=True)],
-        [KeyboardButton("📊 Mening natijam")],
         [KeyboardButton("🎓 DTM natija")],
     ],
     resize_keyboard=True,
