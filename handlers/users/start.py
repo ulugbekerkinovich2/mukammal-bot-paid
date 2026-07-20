@@ -1620,50 +1620,93 @@ async def ensure_failed_register_retry_sweeper(bot):
 # ----------------------------
 # Bitta statik ID uchun mandat natijasini kutib olish
 # ----------------------------
-MANDAT_POLL_STATIC_ID = os.getenv("MANDAT_POLL_STATIC_ID", "1000000").strip()
+MANDAT_POLL_STATIC_ID = os.getenv("MANDAT_POLL_STATIC_ID", "1027673").strip()
 MANDAT_POLL_INTERVAL_SEC = int(os.getenv("MANDAT_POLL_INTERVAL_SEC", "2"))
 MANDAT_POLL_TASK: Optional[asyncio.Task] = None
 
 
 async def _mandat_static_id_poller():
-    """MANDAT_POLL_STATIC_ID uchun natija chiqquncha har
-    MANDAT_POLL_INTERVAL_SEC sekundda mandat.uzbmb.uz'dan so'raydi.
-    Excelda allaqachon bor bo'lsa — qayta qo'shmaydi va to'xtaydi.
-    Natija topilib excelga qo'shilgach ham to'xtaydi (bitta marta qo'shadi)."""
     if not MANDAT_POLL_STATIC_ID or not is_valid_entrant_id(MANDAT_POLL_STATIC_ID):
-        logger.warning(f"[mandat_poll] noto'g'ri ID, poller ishga tushmaydi: {MANDAT_POLL_STATIC_ID!r}")
+        logger.warning(
+            f"[mandat_poll] noto'g'ri ID, poller ishga tushmaydi: {MANDAT_POLL_STATIC_ID!r}"
+        )
         return
-    count = 0
+
+    count = 1
+
     while True:
         try:
-            count += 1
-            entrant_id = str(int(MANDAT_POLL_STATIC_ID) + count)
+            id1 = str(int(MANDAT_POLL_STATIC_ID) + count)
+            id2 = str(int(MANDAT_POLL_STATIC_ID) + count + 1)
 
-            cached = await lookup_cached_result(entrant_id)
-            if cached:
-                logger.info(f"[mandat_poll] id={int(MANDAT_POLL_STATIC_ID)+int(count)} excelda allaqachon bor — to'xtatildi")
-                return
+            logger.info(
+                f"[mandat_poll] >>> Parallel so'rov yuborildi: {id1}, {id2}"
+            )
 
-            entrant_id = str(int(MANDAT_POLL_STATIC_ID) + count)
-            res = await fetch_mandat_result(entrant_id)
-            if res.get("ok"):
-                await save_result_to_cache(res["data"])
-                logger.info(f"[mandat_poll] id={entrant_id} topildi, excelga qo'shildi")
+            # Cache tekshirish
+            cached1 = await lookup_cached_result(id1)
+            cached2 = await lookup_cached_result(id2)
+
+            if cached1:
+                logger.info(f"[mandat_poll] id={id1} excelda mavjud, o'tkazib yuborildi")
+
+            if cached2:
+                logger.info(f"[mandat_poll] id={id2} excelda mavjud, o'tkazib yuborildi")
+
+            tasks = []
+
+            if not cached1:
+                tasks.append(fetch_mandat_result(id1))
             else:
-                logger.info(
-                    f"[mandat_poll] id={entrant_id} hali topilmadi "
-                    f"(reason={res.get('reason')})"
-                )
+                tasks.append(asyncio.sleep(0, result=None))
 
-            count += 1
+            if not cached2:
+                tasks.append(fetch_mandat_result(id2))
+            else:
+                tasks.append(asyncio.sleep(0, result=None))
+
+            res1, res2 = await asyncio.gather(*tasks)
+
+            for entrant_id, res in [
+                (id1, res1),
+                (id2, res2),
+            ]:
+                if res is None:
+                    continue
+
+                if res.get("ok"):
+                    logger.info(
+                        f"[mandat_poll] ✅ id={entrant_id} TOPILDI. Excelga saqlanmoqda..."
+                    )
+
+                    await save_result_to_cache(res["data"])
+
+                    logger.info(
+                        f"[mandat_poll] ✅ id={entrant_id} muvaffaqiyatli saqlandi."
+                    )
+
+                else:
+                    logger.info(
+                        f"[mandat_poll] ❌ id={entrant_id} topilmadi "
+                        f"(reason={res.get('reason')})"
+                    )
+
+            logger.info(
+                f"[mandat_poll] Batch tugadi ({id1}, {id2}). "
+                f"{MANDAT_POLL_INTERVAL_SEC}s kutilyapti..."
+            )
+
+            count += 2
+
             await asyncio.sleep(MANDAT_POLL_INTERVAL_SEC)
+
         except asyncio.CancelledError:
             raise
+
         except Exception as e:
-            logger.error(f"[mandat_poll] error: {repr(e)}")
+            logger.exception(f"[mandat_poll] xatolik: {e}")
 
-        await asyncio.sleep(MANDAT_POLL_INTERVAL_SEC)
-
+            await asyncio.sleep(MANDAT_POLL_INTERVAL_SEC)
 
 async def ensure_mandat_static_id_poller():
     global MANDAT_POLL_TASK
