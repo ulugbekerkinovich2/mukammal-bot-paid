@@ -1620,8 +1620,8 @@ async def ensure_failed_register_retry_sweeper(bot):
 # ----------------------------
 # Bitta statik ID uchun mandat natijasini kutib olish
 # ----------------------------
-MANDAT_POLL_STATIC_ID = os.getenv("MANDAT_POLL_STATIC_ID", "1027673").strip()
-MANDAT_POLL_INTERVAL_SEC = int(os.getenv("MANDAT_POLL_INTERVAL_SEC", "10"))
+MANDAT_POLL_STATIC_ID = os.getenv("MANDAT_POLL_STATIC_ID", "1062991").strip()
+MANDAT_POLL_INTERVAL_SEC = int(os.getenv("MANDAT_POLL_INTERVAL_SEC", "1"))
 MANDAT_POLL_TASK: Optional[asyncio.Task] = None
 
 
